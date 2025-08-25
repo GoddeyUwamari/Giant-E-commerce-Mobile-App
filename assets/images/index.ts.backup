@@ -1,0 +1,244 @@
+// assets/images/index.ts
+// Central export file for all images in your Walmart app
+
+// ================================
+// BANNERS (42 images total)
+// ================================
+export const banners = {
+    banner_01: require('./banners/banner_01.jpg'),
+    banner_02: require('./banners/banner_02.jpg'),
+    banner_03: require('./banners/banner_03.jpg'),
+    banner_04: require('./banners/banner_04.jpg'),
+    banner_05: require('./banners/banner_05.jpg'),
+    banner_06: require('./banners/banner_06.jpg'),
+    banner_07: require('./banners/banner_07.jpg'),
+    banner_08: require('./banners/banner_08.jpg'),
+    banner_09: require('./banners/banner_09.jpg'),
+    banner_10: require('./banners/banner_10.jpg'),
+    banner_11: require('./banners/banner_11.jpg'),
+    banner_12: require('./banners/banner_12.jpg'),
+    banner_13: require('./banners/banner_13.jpg'),
+    banner_14: require('./banners/banner_14.jpg'),
+    banner_15: require('./banners/banner_15.jpg'),
+    banner_16: require('./banners/banner_16.jpg'),
+    banner_17: require('./banners/banner_17.jpg'),
+    banner_18: require('./banners/banner_18.jpg'),
+    banner_19: require('./banners/banner_19.jpg'),
+    banner_20: require('./banners/banner_20.jpg'),
+    banner_21: require('./banners/banner_21.jpg'),
+    banner_22: require('./banners/banner_22.jpg'),
+    banner_23: require('./banners/banner_23.jpg'),
+    banner_24: require('./banners/banner_24.jpg'),
+    banner_25: require('./banners/banner_25.jpg'),
+    banner_26: require('./banners/banner_26.jpg'),
+    banner_27: require('./banners/banner_27.jpg'),
+    banner_28: require('./banners/banner_28.jpg'),
+    banner_29: require('./banners/banner_29.jpg'),
+    banner_30: require('./banners/banner_30.jpg'),
+    banner_31: require('./banners/banner_31.jpg'),
+    banner_32: require('./banners/banner_32.jpg'),
+    banner_33: require('./banners/banner_33.jpg'),
+    banner_34: require('./banners/banner_34.jpg'),
+    banner_35: require('./banners/banner_35.jpg'),
+    banner_36: require('./banners/banner_36.jpg'),
+    banner_37: require('./banners/banner_37.jpg'),
+    banner_38: require('./banners/banner_38.jpg'),
+    banner_39: require('./banners/banner_39.jpg'),
+    banner_40: require('./banners/banner_40.jpg'),
+    banner_41: require('./banners/banner_41.jpg'),
+    banner_42: require('./banners/banner_42.jpg'),
+};
+
+// ================================
+// PRODUCTS (59 images total)
+// ================================
+// Large Products (460x460 and larger)
+export const products = {
+    prod_01: require('./products/prod_01.jpg'),
+    prod_02: require('./products/prod_02.jpg'),
+    prod_03: require('./products/prod_03.jpg'),
+    prod_04: require('./products/prod_04.jpg'),
+    prod_05: require('./products/prod_05.jpg'),
+    prod_06: require('./products/prod_06.jpg'),
+    prod_07: require('./products/prod_07.jpg'),
+    prod_08: require('./products/prod_08.jpg'),
+    prod_09: require('./products/prod_09.jpg'),
+    prod_10: require('./products/prod_10.jpg'),
+    prod_11: require('./products/prod_11.jpg'),
+    prod_12: require('./products/prod_12.jpg'),
+    prod_13: require('./products/prod_13.jpg'),
+    prod_14: require('./products/prod_14.jpg'),
+    prod_15: require('./products/prod_15.jpg'),
+    prod_16: require('./products/prod_16.jpg'),
+
+    // Medium Products (300x300, 346x346)
+    med_01: require('./products/med_01.jpg'),
+    med_02: require('./products/med_02.jpg'),
+    med_03: require('./products/med_03.jpg'),
+    med_04: require('./products/med_04.jpg'),
+    med_05: require('./products/med_05.jpg'),
+    med_06: require('./products/med_06.jpg'),
+    med_07: require('./products/med_07.jpg'),
+    med_08: require('./products/med_08.jpg'),
+    med_09: require('./products/med_09.jpg'),
+    med_10: require('./products/med_10.jpg'),
+    med_11: require('./products/med_11.jpg'),
+    med_12: require('./products/med_12.jpg'),
+    med_13: require('./products/med_13.jpg'),
+    med_14: require('./products/med_14.jpg'),
+    med_15: require('./products/med_15.jpg'),
+    med_16: require('./products/med_16.jpg'),
+    med_17: require('./products/med_17.jpg'),
+    med_18: require('./products/med_18.jpg'),
+
+    // Small Products (120x120, 150x150, 173x173)
+    small_01: require('./products/small_01.jpg'),
+    small_02: require('./products/small_02.jpg'),
+    small_03: require('./products/small_03.jpg'),
+    small_04: require('./products/small_04.jpg'),
+    small_05: require('./products/small_05.jpg'),
+    small_06: require('./products/small_06.jpg'),
+    small_07: require('./products/small_07.jpg'),
+    small_08: require('./products/small_08.jpg'),
+    small_09: require('./products/small_09.jpg'),
+    small_10: require('./products/small_10.jpg'),
+    small_11: require('./products/small_11.jpg'),
+    small_12: require('./products/small_12.jpg'),
+    small_13: require('./products/small_13.jpg'),
+    small_14: require('./products/small_14.jpg'),
+    small_15: require('./products/small_15.jpg'),
+    small_16: require('./products/small_16.jpg'),
+    small_17: require('./products/small_17.jpg'),
+    small_18: require('./products/small_18.jpg'),
+    small_19: require('./products/small_19.jpg'),
+    small_20: require('./products/small_20.jpg'),
+    small_21: require('./products/small_21.jpg'),
+    small_22: require('./products/small_22.jpg'),
+    small_23: require('./products/small_23.jpg'),
+    small_24: require('./products/small_24.jpg'),
+    small_25: require('./products/small_25.jpg'),
+    small_26: require('./products/small_26.jpg'),
+};
+
+// ================================
+// THUMBNAILS (26 images total)
+// ================================
+export const thumbnails = {
+    thumb_01: require('./thumbnails/thumb_01.jpg'),
+    thumb_02: require('./thumbnails/thumb_02.jpg'),
+    thumb_03: require('./thumbnails/thumb_03.jpg'),
+    thumb_04: require('./thumbnails/thumb_04.jpg'),
+    thumb_05: require('./thumbnails/thumb_05.jpg'),
+    thumb_06: require('./thumbnails/thumb_06.jpg'),
+    thumb_07: require('./thumbnails/thumb_07.jpg'),
+    thumb_08: require('./thumbnails/thumb_08.jpg'),
+    thumb_09: require('./thumbnails/thumb_09.jpg'),
+    thumb_10: require('./thumbnails/thumb_10.jpg'),
+    thumb_11: require('./thumbnails/thumb_11.jpg'),
+    thumb_12: require('./thumbnails/thumb_12.jpg'),
+    thumb_13: require('./thumbnails/thumb_13.jpg'),
+    thumb_14: require('./thumbnails/thumb_14.jpg'),
+    thumb_15: require('./thumbnails/thumb_15.jpg'),
+    thumb_16: require('./thumbnails/thumb_16.jpg'),
+    thumb_17: require('./thumbnails/thumb_17.jpg'),
+    thumb_18: require('./thumbnails/thumb_18.jpg'),
+    thumb_19: require('./thumbnails/thumb_19.jpg'),
+    thumb_20: require('./thumbnails/thumb_20.jpg'),
+    thumb_21: require('./thumbnails/thumb_21.jpg'),
+    thumb_22: require('./thumbnails/thumb_22.jpg'),
+    thumb_23: require('./thumbnails/thumb_23.jpg'),
+    thumb_24: require('./thumbnails/thumb_24.jpg'),
+    thumb_25: require('./thumbnails/thumb_25.jpg'),
+    thumb_26: require('./thumbnails/thumb_26.jpg'),
+    thumb_27: require('./thumbnails/thumb_27.jpg'),
+};
+
+// ================================
+// CATEGORIES (2 images total)
+// ================================
+export const categories = {
+    cat_01: require('./categories/cat_01.jpg'),
+    cat_02: require('./categories/cat_02.jpg'),
+    // Note: You may want to add more category images later
+};
+
+// ================================
+// UI ELEMENTS (21 images total)
+// ================================
+export const ui = {
+    payment_methods: require('./ui/payment_methods.png'),
+    newsletter_popup: require('./ui/newsletter_popup.jpg'),
+    misc_01: require('./ui/misc_01.jpg'),
+    misc_02: require('./ui/misc_02.jpg'),
+    misc_03: require('./ui/misc_03.jpg'),
+    misc_04: require('./ui/misc_04.jpg'),
+    misc_05: require('./ui/misc_05.jpg'),
+    misc_06: require('./ui/misc_06.jpg'),
+    misc_07: require('./ui/misc_07.jpg'),
+    misc_08: require('./ui/misc_08.jpg'),
+    misc_09: require('./ui/misc_09.jpg'),
+    misc_10: require('./ui/misc_10.jpg'),
+    misc_11: require('./ui/misc_11.jpg'),
+    misc_12: require('./ui/misc_12.jpg'),
+    misc_13: require('./ui/misc_13.jpg'),
+    misc_14: require('./ui/misc_14.jpg'),
+    misc_15: require('./ui/misc_15.jpg'),
+    misc_16: require('./ui/misc_16.jpg'),
+    misc_17: require('./ui/misc_17.jpg'),
+    misc_18: require('./ui/misc_18.jpg'),
+    icon_01: require('./ui/icon_01.png'),
+};
+
+// ================================
+// CONVENIENCE EXPORTS
+// ================================
+
+// Export all as default for easy access
+export default {
+    banners,
+    products,
+    thumbnails,
+    categories,
+    ui,
+};
+
+// ================================
+// TYPED EXPORTS (Optional but recommended)
+// ================================
+
+// Export types for better TypeScript support
+export type BannerKey = keyof typeof banners;
+export type ProductKey = keyof typeof products;
+export type ThumbnailKey = keyof typeof thumbnails;
+export type CategoryKey = keyof typeof categories;
+export type UIKey = keyof typeof ui;
+
+// ================================
+// USAGE EXAMPLES:
+// ================================
+
+/*
+// Import in your components like this:
+
+// Method 1: Named imports
+import { banners, products, thumbnails } from '../../assets/images';
+
+// Usage:
+<Image source={banners.banner_01} style={styles.bannerImage} />
+<Image source={products.prod_01} style={styles.productImage} />
+<Image source={thumbnails.thumb_01} style={styles.thumbnailImage} />
+
+// Method 2: Default import
+import images from '../../assets/images';
+
+// Usage:
+<Image source={images.banners.banner_01} style={styles.bannerImage} />
+<Image source={images.products.prod_01} style={styles.productImage} />
+
+// Method 3: Destructuring from default
+import images from '../../assets/images';
+const { banners, products } = images;
+
+// Usage:
+<Image source={banners.banner_01} style={styles.bannerImage} />
+*/

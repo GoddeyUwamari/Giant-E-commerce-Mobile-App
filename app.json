@@ -1,0 +1,91 @@
+{
+  "expo": {
+    "name": "walmart-mobile",
+    "slug": "walmart-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "walmart-mobile",
+    "platforms": ["ios", "android", "web"],
+    "extra": {
+      "FIREBASE_API_KEY": "$FIREBASE_API_KEY",
+      "FIREBASE_AUTH_DOMAIN": "$FIREBASE_AUTH_DOMAIN",
+      "FIREBASE_PROJECT_ID": "$FIREBASE_PROJECT_ID",
+      "FIREBASE_STORAGE_BUCKET": "$FIREBASE_STORAGE_BUCKET",
+      "FIREBASE_MESSAGING_SENDER_ID": "$FIREBASE_MESSAGING_SENDER_ID",
+      "FIREBASE_APP_ID": "$FIREBASE_APP_ID",
+      "ANTHROPIC_API_KEY": "$ANTHROPIC_API_KEY",
+      "STRIPE_PUBLISHABLE_KEY": "$STRIPE_PUBLISHABLE_KEY",
+      "API_BASE_URL": "$API_BASE_URL"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.walmartmobile.app",
+      "config": {
+        "googleMapsApiKey": "$GOOGLE_MAPS_API_KEY_IOS"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.walmartmobile.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "$GOOGLE_MAPS_API_KEY_ANDROID"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-barcode-scanner",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "This app uses photos to upload product images.",
+          "cameraPermission": "This app uses camera to scan barcodes and take photos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "This app uses location to find nearby Walmart stores.",
+          "locationAlwaysPermission": "This app uses location to find nearby Walmart stores.",
+          "locationWhenInUsePermission": "This app uses location to find nearby Walmart stores.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0071CE",
+          "sounds": ["./assets/notification-sound.wav"],
+          "iosDisplayInForeground": true,
+          "androidMode": "default",
+          "androidCollapsedTitle": "New notification"
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "This app needs access to your calendar to save order confirmations and delivery reminders."
+        }
+      ]
+    ]
+  }
+}
