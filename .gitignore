@@ -108,4 +108,5 @@ dist/
 
 # Temporary folders
 tmp/
-temp/
+temp/.temp_kaggle_data/
+kaggle-walmart-data/
