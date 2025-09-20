@@ -11,18 +11,21 @@ import {
     Animated,
     Dimensions,
     Modal,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-// Import unified system - FIXED IMPORTS
+// Import unified system
 import { useCartStore } from '../../store/slices/cartSlice';
 import {
     getProductsByCategory,
-    CATEGORIES,
-    Product
-} from '../../constants/products';
+    ALL_CATEGORIES,
+    ALL_PRODUCTS,
+    Product,
+    Category
+} from '../../constants/products/data';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -35,27 +38,24 @@ const sortOptions = [
     { id: 'reviews', label: 'Most Reviewed' },
 ];
 
-// FIXED: Create helper functions for category management
-const getCategoryBySlug = (slug: string) => {
-    const categoryKey = Object.keys(CATEGORIES).find(key => key === slug);
-    if (!categoryKey) return null;
-
-    const category = CATEGORIES[categoryKey as keyof typeof CATEGORIES];
-    return {
-        ...category,
-        slug: categoryKey,
-        subcategories: category.subcategories || [],
-        itemCount: category.products.length
-    };
+// Enhanced helper functions
+const getCategoryBySlug = (slug: string): Category | null => {
+    if (!slug || !ALL_CATEGORIES) return null;
+    return ALL_CATEGORIES.find(cat => cat.slug === slug) || null;
 };
 
-// FIXED: Create sorting function
 const sortProducts = (products: Product[], sortBy: string): Product[] => {
+    if (!products || !Array.isArray(products)) return [];
     const sorted = [...products];
 
     switch (sortBy) {
         case 'featured':
-            return sorted.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
+            return sorted.sort((a, b) => {
+                const aFeatured = a.featured ? 1 : 0;
+                const bFeatured = b.featured ? 1 : 0;
+                if (bFeatured !== aFeatured) return bFeatured - aFeatured;
+                return b.rating - a.rating;
+            });
         case 'price-low':
             return sorted.sort((a, b) => a.price - b.price);
         case 'price-high':
@@ -63,12 +63,28 @@ const sortProducts = (products: Product[], sortBy: string): Product[] => {
         case 'rating':
             return sorted.sort((a, b) => b.rating - a.rating);
         case 'newest':
-            return sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            return sorted.sort((a, b) => {
+                const dateA = new Date(a.createdAt || 0).getTime();
+                const dateB = new Date(b.createdAt || 0).getTime();
+                return dateB - dateA;
+            });
         case 'reviews':
             return sorted.sort((a, b) => b.reviewCount - a.reviewCount);
         default:
             return sorted;
     }
+};
+
+// Enhanced image source handler
+const getImageSource = (product: Product) => {
+    if (product.primaryImage?.uri) {
+        return { uri: product.primaryImage.uri };
+    }
+    if (product.image) {
+        return { uri: product.image };
+    }
+    // Fallback placeholder
+    return { uri: `https://via.placeholder.com/300x300/E5E7EB/9CA3AF?text=${encodeURIComponent(product.name.substring(0, 10))}` };
 };
 
 export default function CategoryPage(): JSX.Element {
@@ -77,7 +93,7 @@ export default function CategoryPage(): JSX.Element {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [sortBy, setSortBy] = useState('featured');
     const [showSortModal, setShowSortModal] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -89,38 +105,59 @@ export default function CategoryPage(): JSX.Element {
     const summary = useCartStore((state) => state.summary);
     const addItem = useCartStore((state) => state.addItem);
 
-    // ✅ FIXED: Memoize category to prevent object recreation
+    // Memoize category to prevent unnecessary re-renders
     const category = useMemo(() => {
         return getCategoryBySlug(slug || '');
     }, [slug]);
 
-    // ✅ FIXED: loadProducts with proper dependencies and loading guard
+    // Enhanced product loading with better error handling
     const loadProducts = useCallback(async () => {
-        if (isLoading || !slug) return; // Prevent multiple calls
+        if (!slug) {
+            setIsLoading(false);
+            return;
+        }
 
         setIsLoading(true);
         try {
             console.log('Loading products for category:', slug);
 
             // Get products from unified system
-            const categoryProducts = getProductsByCategory(slug as keyof typeof CATEGORIES || 'electronics');
+            let categoryProducts: Product[] = [];
+
+            if (slug === 'all' || slug === 'browse') {
+                // Handle "Browse All Products" case
+                categoryProducts = ALL_PRODUCTS || [];
+            } else {
+                categoryProducts = getProductsByCategory(slug) || [];
+            }
+
+            // Filter out invalid products
+            const validProducts = categoryProducts.filter(product =>
+                product &&
+                typeof product === 'object' &&
+                product.id &&
+                product.name &&
+                product.price !== undefined
+            );
 
             // Apply initial sorting
-            const sortedProducts = sortProducts(categoryProducts, sortBy);
+            const sortedProducts = sortProducts(validProducts, sortBy);
 
-            console.log('Found products:', sortedProducts.length, 'for category:', category?.name);
+            console.log(`Found ${sortedProducts.length} valid products for category: ${category?.name || slug}`);
             setProducts(sortedProducts);
         } catch (error) {
             console.error('Error loading products:', error);
+            setProducts([]);
         } finally {
             setIsLoading(false);
         }
     }, [slug, sortBy, category?.name]);
 
-    // ✅ FIXED: Only depend on slug, not category object
+    // Load products when component mounts or slug changes
     useEffect(() => {
         if (slug) {
             loadProducts();
+
             // Entrance animation
             Animated.parallel([
                 Animated.timing(fadeAnim, {
@@ -138,6 +175,7 @@ export default function CategoryPage(): JSX.Element {
         }
     }, [slug, loadProducts]);
 
+    // Sort modal animation
     useEffect(() => {
         if (showSortModal) {
             Animated.spring(sortModalAnim, {
@@ -165,7 +203,7 @@ export default function CategoryPage(): JSX.Element {
         setSortBy(sortOption);
         setShowSortModal(false);
 
-        // Use unified sorting system
+        // Apply sorting to current products
         const sortedProducts = sortProducts(products, sortOption);
         setProducts(sortedProducts);
 
@@ -174,29 +212,42 @@ export default function CategoryPage(): JSX.Element {
 
     const handleAddToCart = useCallback(async (product: Product) => {
         try {
-            const success = await addItem({
+            const cartItem = {
                 productId: product.id,
                 name: product.name,
-                brand: product.brand,
+                brand: product.brand || '',
                 price: product.price,
                 originalPrice: product.originalPrice,
                 quantity: 1,
-                maxQuantity: product.maxQuantity,
-                minQuantity: product.minQuantity,
-                image: product.primaryImage,
+                maxQuantity: product.maxQuantity || 10,
+                minQuantity: product.minQuantity || 1,
+                image: getImageSource(product).uri,
                 category: product.category,
-                sku: product.sku,
-                status: product.status,
-                storeId: product.storeId,
-                storeName: product.storeName,
-                delivery: product.delivery,
-            });
+                sku: product.sku || product.id,
+                status: product.status || 'available',
+                storeId: product.storeId || 'walmart-main',
+                storeName: product.storeName || 'Walmart Supercenter',
+                delivery: product.delivery || {
+                    option: 'pickup' as const,
+                    freeShippingEligible: product.freeShipping || false,
+                },
+            };
 
+            const success = await addItem(cartItem);
             if (success) {
                 console.log('Added to cart:', product.name);
+                Alert.alert(
+                    'Added to Cart',
+                    `${product.name} has been added to your cart.`,
+                    [
+                        { text: 'Continue Shopping', style: 'cancel' },
+                        { text: 'View Cart', onPress: () => router.push('/(modals)/cart') }
+                    ]
+                );
             }
         } catch (error) {
             console.error('Error adding to cart:', error);
+            Alert.alert('Error', 'Failed to add item to cart. Please try again.');
         }
     }, [addItem]);
 
@@ -208,6 +259,7 @@ export default function CategoryPage(): JSX.Element {
                 return '#10B981';
             case 'Save $100':
             case 'Sale':
+            case 'Hot Deal':
                 return '#F59E0B';
             case 'Limited Stock':
                 return '#8B5CF6';
@@ -217,17 +269,51 @@ export default function CategoryPage(): JSX.Element {
                 return '#059669';
             case 'Trending':
                 return '#EC4899';
-            case 'Hot Deal':
-                return '#F59E0B';
+            case 'Editor\'s Choice':
+                return '#6366F1';
+            case 'Customer Favorite':
+                return '#F97316';
             default:
-                return '#EF4444';
+                return '#6B7280';
+        }
+    }, []);
+
+    // Enhanced navigation handlers
+    const handleProductPress = useCallback((productId: string) => {
+        try {
+            router.push(`/product/${productId}`);
+        } catch (error) {
+            console.error('Navigation error:', error);
+            Alert.alert('Error', 'Unable to navigate to product details');
+        }
+    }, []);
+
+    const handleFilterPress = useCallback(() => {
+        try {
+            if (category) {
+                router.push(`/product?category=${category.slug}`);
+            } else {
+                router.push('/product');
+            }
+        } catch (error) {
+            console.error('Navigation error:', error);
+            Alert.alert('Error', 'Unable to navigate to filters');
+        }
+    }, [category]);
+
+    const handleBrowseAllPress = useCallback(() => {
+        try {
+            router.push('/product');
+        } catch (error) {
+            console.error('Navigation error:', error);
+            Alert.alert('Error', 'Unable to navigate to products');
         }
     }, []);
 
     const renderProductGrid = useCallback(({ item }: { item: Product }) => (
         <TouchableOpacity
             style={styles.productGridCard}
-            onPress={() => router.push(`/product/${item.id}`)}
+            onPress={() => handleProductPress(item.id)}
             activeOpacity={0.8}
         >
             {item.badge && (
@@ -236,7 +322,7 @@ export default function CategoryPage(): JSX.Element {
                 </View>
             )}
             <Image
-                source={item.primaryImage}
+                source={getImageSource(item)}
                 style={styles.productGridImage}
                 resizeMode="cover"
             />
@@ -247,7 +333,7 @@ export default function CategoryPage(): JSX.Element {
                 <View style={styles.productRating}>
                     <Ionicons name="star" size={12} color="#FCD34D" />
                     <Text style={styles.productRatingText}>
-                        {item.rating} ({item.reviewCount})
+                        {item.rating.toFixed(1)} ({item.reviewCount})
                     </Text>
                 </View>
                 <View style={styles.productPriceContainer}>
@@ -261,10 +347,10 @@ export default function CategoryPage(): JSX.Element {
                     )}
                 </View>
                 <Text style={styles.productShipping}>
-                    {item.shipping.free ? 'FREE shipping' : `Shipping: $${item.shipping.cost}`}
+                    {item.freeShipping || (item.shipping && item.shipping.free) ? 'FREE shipping' : `Shipping: $${item.shipping?.cost || 5.99}`}
                 </Text>
                 <Text style={styles.productSeller}>
-                    Sold by {item.seller}
+                    Sold by {item.seller || 'Walmart'}
                 </Text>
                 {!item.inStock && (
                     <Text style={styles.productOutOfStock}>
@@ -284,17 +370,17 @@ export default function CategoryPage(): JSX.Element {
                 )}
             </View>
         </TouchableOpacity>
-    ), [getBadgeColor, handleAddToCart]);
+    ), [getBadgeColor, handleAddToCart, handleProductPress]);
 
     const renderProductList = useCallback(({ item }: { item: Product }) => (
         <TouchableOpacity
             style={styles.productListCard}
-            onPress={() => router.push(`/product/${item.id}`)}
+            onPress={() => handleProductPress(item.id)}
             activeOpacity={0.8}
         >
             <View style={styles.productListImageContainer}>
                 <Image
-                    source={item.primaryImage}
+                    source={getImageSource(item)}
                     style={styles.productListImage}
                     resizeMode="cover"
                 />
@@ -311,7 +397,7 @@ export default function CategoryPage(): JSX.Element {
                 <View style={styles.productRating}>
                     <Ionicons name="star" size={14} color="#FCD34D" />
                     <Text style={styles.productListRatingText}>
-                        {item.rating} ({item.reviewCount} reviews)
+                        {item.rating.toFixed(1)} ({item.reviewCount} reviews)
                     </Text>
                 </View>
                 <View style={styles.productPriceContainer}>
@@ -325,10 +411,10 @@ export default function CategoryPage(): JSX.Element {
                     )}
                 </View>
                 <Text style={styles.productListShipping}>
-                    {item.shipping.free ? 'FREE shipping' : `Shipping: $${item.shipping.cost}`}
+                    {item.freeShipping || (item.shipping && item.shipping.free) ? 'FREE shipping' : `Shipping: $${item.shipping?.cost || 5.99}`}
                 </Text>
                 <Text style={styles.productListSeller}>
-                    Sold by {item.seller}
+                    Sold by {item.seller || 'Walmart'}
                 </Text>
                 {!item.inStock && (
                     <Text style={styles.productListOutOfStock}>
@@ -347,9 +433,10 @@ export default function CategoryPage(): JSX.Element {
                 </TouchableOpacity>
             )}
         </TouchableOpacity>
-    ), [getBadgeColor, handleAddToCart]);
+    ), [getBadgeColor, handleAddToCart, handleProductPress]);
 
-    if (!category) {
+    // Handle case where category is not found
+    if (!isLoading && !category && slug !== 'all' && slug !== 'browse') {
         return (
             <SafeAreaView style={styles.errorContainer}>
                 <Ionicons name="alert-circle" size={48} color="#EF4444" />
@@ -360,7 +447,7 @@ export default function CategoryPage(): JSX.Element {
                     The category "{slug}" doesn't exist or couldn't be found.
                 </Text>
                 <Text style={styles.debugText}>
-                    Available categories: {Object.keys(CATEGORIES).join(', ')}
+                    Available categories: {ALL_CATEGORIES?.map(cat => cat.name).join(', ') || 'Loading...'}
                 </Text>
                 <TouchableOpacity
                     style={styles.errorButton}
@@ -372,6 +459,26 @@ export default function CategoryPage(): JSX.Element {
             </SafeAreaView>
         );
     }
+
+    // Get display information for special cases
+    const getDisplayInfo = () => {
+        if (slug === 'all' || slug === 'browse') {
+            return {
+                name: 'All Products',
+                color: '#3B82F6',
+                icon: 'storefront' as const,
+                itemCount: products.length
+            };
+        }
+        return category || {
+            name: 'Products',
+            color: '#6B7280',
+            icon: 'cube' as const,
+            itemCount: products.length
+        };
+    };
+
+    const displayInfo = getDisplayInfo();
 
     return (
         <SafeAreaView style={styles.container}>
@@ -386,7 +493,7 @@ export default function CategoryPage(): JSX.Element {
                     </TouchableOpacity>
                     <View style={styles.headerTitleContainer}>
                         <Text style={styles.headerTitle}>
-                            {category.name}
+                            {displayInfo.name}
                         </Text>
                         <Text style={styles.headerSubtitle}>
                             {products.length} products
@@ -426,58 +533,31 @@ export default function CategoryPage(): JSX.Element {
                     }
                 >
                     <View style={styles.heroContainer}>
-                        <View style={[styles.heroGradient, { backgroundColor: category.color + '20' }]}>
+                        <View style={[styles.heroGradient, { backgroundColor: displayInfo.color + '20' }]}>
                             <View style={styles.heroContent}>
-                                <View style={[styles.heroIcon, { backgroundColor: category.color + '30' }]}>
-                                    <Ionicons name={category.icon} size={32} color={category.color} />
+                                <View style={[styles.heroIcon, { backgroundColor: displayInfo.color + '30' }]}>
+                                    <Ionicons name={displayInfo.icon} size={32} color={displayInfo.color} />
                                 </View>
                                 <Text style={styles.heroTitle}>
-                                    {category.name}
+                                    {displayInfo.name}
                                 </Text>
                                 <Text style={styles.heroSubtitle}>
-                                    Discover amazing {category.name.toLowerCase()} products
+                                    {slug === 'all' || slug === 'browse'
+                                        ? 'Browse our complete collection of products'
+                                        : `Discover amazing ${displayInfo.name.toLowerCase()} products`
+                                    }
                                 </Text>
                                 <Text style={styles.heroItemCount}>
-                                    {category.itemCount} items available
+                                    {displayInfo.itemCount || products.length} items available
                                 </Text>
                             </View>
                         </View>
                     </View>
 
-                    {category.subcategories && category.subcategories.length > 0 && (
-                        <View style={styles.subcategoriesContainer}>
-                            <Text style={styles.subcategoriesTitle}>
-                                Shop by Category
-                            </Text>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                <View style={styles.subcategoriesContent}>
-                                    {category.subcategories.map((subcategory) => (
-                                        <TouchableOpacity
-                                            key={subcategory.id}
-                                            style={styles.subcategoryItem}
-                                            onPress={() => router.push(`/product?category=${category.slug}&subcategory=${subcategory.id}`)}
-                                            activeOpacity={0.8}
-                                        >
-                                            <View style={[styles.subcategoryIcon, { backgroundColor: category.color + '15' }]}>
-                                                <Ionicons name={subcategory.icon || 'folder-outline'} size={24} color={category.color} />
-                                            </View>
-                                            <Text style={styles.subcategoryName}>
-                                                {subcategory.name}
-                                            </Text>
-                                            <Text style={styles.subcategoryCount}>
-                                                {subcategory.productCount || 0} items
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </ScrollView>
-                        </View>
-                    )}
-
                     <View style={styles.filterSortBar}>
                         <TouchableOpacity
                             style={styles.filterButton}
-                            onPress={() => router.push(`/product?category=${category.slug}`)}
+                            onPress={handleFilterPress}
                             activeOpacity={0.7}
                         >
                             <Ionicons name="filter" size={16} color="#374151" />
@@ -543,7 +623,7 @@ export default function CategoryPage(): JSX.Element {
                             </Text>
                             <TouchableOpacity
                                 style={styles.browseAllButton}
-                                onPress={() => router.push('/product')}
+                                onPress={handleBrowseAllPress}
                                 activeOpacity={0.8}
                             >
                                 <Text style={styles.browseAllText}>Browse All Products</Text>
@@ -618,7 +698,6 @@ export default function CategoryPage(): JSX.Element {
     );
 }
 
-// COMPLETE STYLES - FIXED
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -631,65 +710,84 @@ const styles = StyleSheet.create({
         backgroundColor: '#ffffff',
         borderBottomWidth: 1,
         borderBottomColor: '#E5E7EB',
-        elevation: 2,
-        shadowOffset: { width: 0, height: 1 },
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
-        shadowRadius: 3,
+        shadowRadius: 4,
+        zIndex: 1000,
     },
     headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
+        height: 60,
     },
     backButton: {
         marginRight: 12,
         padding: 8,
         borderRadius: 8,
+        backgroundColor: 'rgba(107, 114, 128, 0.1)',
     },
     headerTitleContainer: {
         flex: 1,
+        marginLeft: 4,
     },
     headerTitle: {
         fontSize: 20,
-        fontWeight: 'bold',
+        fontWeight: '700',
         color: '#111827',
+        lineHeight: 24,
     },
     headerSubtitle: {
         color: '#6B7280',
         fontSize: 14,
         marginTop: 2,
+        fontWeight: '500',
     },
     cartButton: {
         padding: 8,
+        borderRadius: 8,
+        backgroundColor: 'rgba(107, 114, 128, 0.1)',
     },
     cartIconContainer: {
         position: 'relative',
     },
     cartBadge: {
         position: 'absolute',
-        top: -4,
-        right: -4,
+        top: -6,
+        right: -6,
         backgroundColor: '#EF4444',
         width: 20,
         height: 20,
         borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: '#ffffff',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
     cartBadgeText: {
         color: '#ffffff',
-        fontSize: 12,
-        fontWeight: 'bold',
+        fontSize: 11,
+        fontWeight: '700',
     },
     scrollContainer: {
         flex: 1,
     },
     heroContainer: {
         backgroundColor: '#ffffff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F3F4F6',
     },
     heroGradient: {
-        padding: 24,
+        padding: 32,
+        borderRadius: 0,
     },
     heroContent: {
         alignItems: 'center',
@@ -701,168 +799,198 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 16,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
     },
     heroTitle: {
         color: '#111827',
-        fontWeight: 'bold',
+        fontWeight: '800',
         fontSize: 28,
         marginBottom: 8,
         textAlign: 'center',
+        letterSpacing: -0.5,
     },
     heroSubtitle: {
         color: '#6B7280',
         textAlign: 'center',
         fontSize: 16,
         lineHeight: 24,
-        marginBottom: 8,
+        marginBottom: 12,
+        fontWeight: '500',
+        maxWidth: 280,
     },
     heroItemCount: {
         color: '#374151',
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    subcategoriesContainer: {
-        backgroundColor: '#ffffff',
-        padding: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#F3F4F6',
-    },
-    subcategoriesTitle: {
-        color: '#111827',
-        fontWeight: 'bold',
-        fontSize: 18,
-        marginBottom: 12,
-    },
-    subcategoriesContent: {
-        flexDirection: 'row',
-        paddingRight: 16,
-    },
-    subcategoryItem: {
-        alignItems: 'center',
-        marginRight: 24,
-        minWidth: 80,
-    },
-    subcategoryIcon: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 8,
-    },
-    subcategoryName: {
-        color: '#111827',
-        fontWeight: '500',
-        fontSize: 14,
-        textAlign: 'center',
-        marginBottom: 2,
-    },
-    subcategoryCount: {
-        color: '#6B7280',
-        fontSize: 12,
+        fontSize: 15,
+        fontWeight: '600',
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        overflow: 'hidden',
     },
     filterSortBar: {
         backgroundColor: '#ffffff',
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingVertical: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#E5E7EB',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
     },
     filterButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
         backgroundColor: '#F3F4F6',
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
     },
     filterButtonText: {
         color: '#374151',
-        fontWeight: '500',
+        fontWeight: '600',
         marginLeft: 8,
-        fontSize: 16,
+        fontSize: 15,
     },
     sortButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
         backgroundColor: '#F3F4F6',
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        flex: 1,
+        marginHorizontal: 8,
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
     },
     sortButtonText: {
         color: '#374151',
-        fontWeight: '500',
-        marginRight: 4,
-        fontSize: 16,
+        fontWeight: '600',
+        marginRight: 8,
+        fontSize: 15,
+        flex: 1,
     },
     viewModeToggle: {
         flexDirection: 'row',
         backgroundColor: '#F3F4F6',
-        borderRadius: 8,
+        borderRadius: 10,
         padding: 2,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
     },
     viewModeButton: {
-        padding: 8,
-        borderRadius: 6,
-        marginHorizontal: 2,
+        padding: 10,
+        borderRadius: 8,
+        marginHorizontal: 1,
     },
     viewModeButtonActive: {
         backgroundColor: '#EFF6FF',
-        elevation: 1,
+        elevation: 2,
         shadowColor: '#2563EB',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.2,
-        shadowRadius: 2,
+        shadowRadius: 3,
     },
     loadingContainer: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 48,
+        paddingVertical: 60,
+        backgroundColor: '#ffffff',
+        marginTop: 20,
+        marginHorizontal: 16,
+        borderRadius: 16,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
     },
     loadingText: {
         color: '#6B7280',
-        marginTop: 8,
+        marginTop: 16,
         fontSize: 16,
+        fontWeight: '500',
     },
     emptyContainer: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 48,
-        paddingHorizontal: 24,
+        paddingVertical: 60,
+        paddingHorizontal: 32,
+        backgroundColor: '#ffffff',
+        marginTop: 20,
+        marginHorizontal: 16,
+        borderRadius: 16,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
     },
     emptyTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
+        fontSize: 22,
+        fontWeight: '700',
         color: '#111827',
-        marginTop: 16,
+        marginTop: 20,
         marginBottom: 8,
+        textAlign: 'center',
     },
     emptySubtitle: {
         color: '#6B7280',
         textAlign: 'center',
         fontSize: 16,
         lineHeight: 24,
-        marginBottom: 24,
+        marginBottom: 32,
+        fontWeight: '500',
+        maxWidth: 280,
     },
     browseAllButton: {
         backgroundColor: '#2563EB',
-        borderRadius: 8,
-        paddingHorizontal: 24,
-        paddingVertical: 12,
+        borderRadius: 12,
+        paddingHorizontal: 32,
+        paddingVertical: 16,
+        elevation: 3,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
     },
     browseAllText: {
         color: '#ffffff',
-        fontWeight: '600',
+        fontWeight: '700',
         fontSize: 16,
     },
     productsContainer: {
         padding: 16,
+        paddingBottom: 100,
     },
     productGrid: {
         flexDirection: 'row',
@@ -871,186 +999,232 @@ const styles = StyleSheet.create({
     },
     productGridWrapper: {
         width: '48%',
-        marginBottom: 16,
+        marginBottom: 20,
     },
     productGridCard: {
         backgroundColor: '#ffffff',
-        borderRadius: 12,
-        elevation: 2,
+        borderRadius: 16,
+        elevation: 3,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
         position: 'relative',
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 0, 0, 0.05)',
     },
     productBadge: {
         position: 'absolute',
-        top: 8,
-        left: 8,
-        borderRadius: 6,
-        paddingHorizontal: 6,
-        paddingVertical: 3,
-        zIndex: 1,
+        top: 10,
+        left: 10,
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        zIndex: 10,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
     productBadgeText: {
         color: '#ffffff',
         fontSize: 10,
-        fontWeight: 'bold',
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     productGridImage: {
         width: '100%',
-        height: 140,
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
+        height: 160,
+        backgroundColor: '#F9FAFB',
     },
     productGridContent: {
-        padding: 12,
+        padding: 14,
     },
     productGridName: {
         color: '#111827',
-        fontWeight: '500',
+        fontWeight: '600',
         fontSize: 14,
-        lineHeight: 18,
-        marginBottom: 6,
+        lineHeight: 20,
+        marginBottom: 8,
+        minHeight: 40,
     },
     productRating: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 6,
+        marginBottom: 8,
     },
     productRatingText: {
         color: '#6B7280',
         fontSize: 12,
         marginLeft: 4,
+        fontWeight: '500',
     },
     productPriceContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 4,
+        marginBottom: 6,
+        flexWrap: 'wrap',
     },
     productPrice: {
         color: '#111827',
-        fontWeight: 'bold',
+        fontWeight: '700',
         fontSize: 16,
     },
     productOriginalPrice: {
         color: '#9CA3AF',
-        fontSize: 12,
+        fontSize: 13,
         textDecorationLine: 'line-through',
-        marginLeft: 6,
+        marginLeft: 8,
+        fontWeight: '500',
     },
     productShipping: {
         color: '#059669',
         fontSize: 11,
-        marginBottom: 2,
+        marginBottom: 4,
+        fontWeight: '600',
     },
     productSeller: {
         color: '#6B7280',
         fontSize: 11,
-        marginBottom: 8,
+        marginBottom: 12,
+        fontWeight: '500',
     },
     productOutOfStock: {
         color: '#EF4444',
         fontSize: 12,
-        fontWeight: '500',
-        marginBottom: 8,
+        fontWeight: '600',
+        marginBottom: 12,
+        backgroundColor: '#FEE2E2',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        alignSelf: 'flex-start',
     },
     quickAddButton: {
         backgroundColor: '#2563EB',
-        borderRadius: 6,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         alignSelf: 'flex-start',
+        elevation: 2,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
     },
     quickAddText: {
         color: '#ffffff',
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: '700',
         marginLeft: 4,
     },
     productList: {
-        // List container
+        // Container for list view
     },
     productListCard: {
         backgroundColor: '#ffffff',
-        borderRadius: 12,
-        elevation: 2,
+        borderRadius: 16,
+        elevation: 3,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
         marginBottom: 16,
         flexDirection: 'row',
         position: 'relative',
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 0, 0, 0.05)',
     },
     productListImageContainer: {
         position: 'relative',
     },
     productListImage: {
-        width: 120,
-        height: 120,
-        borderTopLeftRadius: 12,
-        borderBottomLeftRadius: 12,
+        width: 130,
+        height: 130,
+        backgroundColor: '#F9FAFB',
     },
     productListBadge: {
         position: 'absolute',
-        top: 8,
-        left: 8,
-        borderRadius: 6,
-        paddingHorizontal: 6,
-        paddingVertical: 3,
-        zIndex: 1,
+        top: 10,
+        left: 10,
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        zIndex: 10,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
     productListContent: {
         flex: 1,
-        padding: 12,
+        padding: 16,
+        paddingRight: 60,
     },
     productListName: {
         color: '#111827',
-        fontWeight: '500',
+        fontWeight: '600',
         fontSize: 16,
-        lineHeight: 20,
-        marginBottom: 6,
+        lineHeight: 22,
+        marginBottom: 8,
     },
     productListRatingText: {
         color: '#6B7280',
         fontSize: 14,
         marginLeft: 4,
+        fontWeight: '500',
     },
     productListPrice: {
         color: '#111827',
-        fontWeight: 'bold',
+        fontWeight: '700',
         fontSize: 18,
     },
     productListShipping: {
         color: '#059669',
         fontSize: 12,
-        marginBottom: 2,
+        marginBottom: 4,
+        fontWeight: '600',
     },
     productListSeller: {
         color: '#6B7280',
         fontSize: 12,
         marginBottom: 8,
+        fontWeight: '500',
     },
     productListOutOfStock: {
         color: '#EF4444',
         fontSize: 12,
-        fontWeight: '500',
+        fontWeight: '600',
         marginBottom: 8,
+        backgroundColor: '#FEE2E2',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        alignSelf: 'flex-start',
     },
     listQuickAddButton: {
         position: 'absolute',
-        bottom: 12,
-        right: 12,
+        bottom: 16,
+        right: 16,
         backgroundColor: '#2563EB',
-        borderRadius: 20,
-        width: 32,
-        height: 32,
+        borderRadius: 24,
+        width: 40,
+        height: 40,
         alignItems: 'center',
         justifyContent: 'center',
+        elevation: 3,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
     },
     modalOverlay: {
         flex: 1,
@@ -1059,53 +1233,62 @@ const styles = StyleSheet.create({
     },
     sortModal: {
         backgroundColor: '#ffffff',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
         paddingBottom: 34,
-        maxHeight: screenHeight * 0.6,
+        maxHeight: screenHeight * 0.7,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -5 },
+        shadowOpacity: 0.2,
+        shadowRadius: 10,
     },
     sortModalHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 24,
+        paddingVertical: 20,
         borderBottomWidth: 1,
         borderBottomColor: '#E5E7EB',
     },
     sortModalTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        fontSize: 20,
+        fontWeight: '700',
         color: '#111827',
     },
     sortModalCloseButton: {
-        padding: 4,
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: 'rgba(107, 114, 128, 0.1)',
     },
     sortOption: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 24,
+        paddingVertical: 18,
         borderBottomWidth: 1,
         borderBottomColor: '#F3F4F6',
     },
     sortOptionText: {
         fontSize: 16,
         color: '#111827',
+        fontWeight: '500',
     },
     errorContainer: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 24,
+        paddingHorizontal: 32,
+        backgroundColor: '#F9FAFB',
     },
     errorTitle: {
         fontSize: 24,
-        fontWeight: 'bold',
+        fontWeight: '700',
         color: '#111827',
-        marginTop: 16,
-        marginBottom: 8,
+        marginTop: 20,
+        marginBottom: 12,
         textAlign: 'center',
     },
     errorSubtitle: {
@@ -1114,22 +1297,30 @@ const styles = StyleSheet.create({
         fontSize: 16,
         lineHeight: 24,
         marginBottom: 16,
+        fontWeight: '500',
     },
     debugText: {
         color: '#9CA3AF',
         fontSize: 12,
         textAlign: 'center',
-        marginBottom: 24,
+        marginBottom: 32,
+        fontStyle: 'italic',
+        lineHeight: 18,
     },
     errorButton: {
         backgroundColor: '#2563EB',
-        borderRadius: 8,
-        paddingHorizontal: 24,
-        paddingVertical: 12,
+        borderRadius: 12,
+        paddingHorizontal: 32,
+        paddingVertical: 16,
+        elevation: 3,
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
     },
     errorButtonText: {
-        color: '`#ffffff',
-        fontWeight: '600',
+        color: '#ffffff',
+        fontWeight: '700',
         fontSize: 16,
     },
 });

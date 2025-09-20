@@ -16,9 +16,18 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 // Import unified systems
-import { getImageById } from '../../assets/images/imageLoader';
 import { useCartStore } from '../../store/slices/cartSlice';
-import { ALL_PRODUCTS } from '../../constants/products';
+import { ALL_PRODUCTS } from '../../constants/products/data';
+
+
+// The import looks correct, but add this helper function after the imports:
+const getImageById = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
+};
 
 const COLORS = {
     walmartBlue: '#0071CE',
@@ -71,9 +80,8 @@ interface Order {
     estimatedDelivery?: string;
 }
 
-// Generate mock orders using real product data
 const generateMockOrders = (): Order[] => {
-    const sampleProducts = ALL_PRODUCTS.slice(0, 15); // Use first 15 products
+    const sampleProducts = ALL_PRODUCTS.slice(0, 15);
     const statuses: Order['status'][] = ['delivered', 'shipped', 'processing', 'cancelled', 'returned'];
     const paymentMethods = ['Visa •••• 1234', 'Mastercard •••• 5678', 'PayPal', 'Apple Pay'];
     const shippingMethods = ['Free 2-Day Delivery', 'Standard Shipping', 'Express Delivery', 'Walmart+ Free Delivery'];
@@ -83,9 +91,8 @@ const generateMockOrders = (): Order[] => {
         orderDate.setDate(orderDate.getDate() - (orderIndex * 5 + Math.floor(Math.random() * 5)));
 
         const status = statuses[Math.floor(Math.random() * statuses.length)];
-        const itemCount = Math.floor(Math.random() * 4) + 1; // 1-4 items per order
+        const itemCount = Math.floor(Math.random() * 4) + 1;
 
-        // Select random products for this order
         const orderProducts = sampleProducts
             .sort(() => 0.5 - Math.random())
             .slice(0, itemCount);
@@ -96,13 +103,14 @@ const generateMockOrders = (): Order[] => {
             name: product.name,
             price: product.price,
             originalPrice: product.originalPrice,
-            quantity: Math.floor(Math.random() * 2) + 1, // 1-2 quantity
-            imageId: product.id, // Use product ID for smart image loading
+            quantity: Math.floor(Math.random() * 2) + 1,
+            imageId: product.id, // Use product ID for image loading
             brand: product.brand || 'Walmart',
-            sku: product.sku,
+            sku: product.sku || `SKU-${product.id}`,
             variant: {
-                color: product.variants?.colors?.[0]?.name,
-                size: product.variants?.sizes?.[0]?.name,
+                // Remove the complex variant references since your new structure may not have them
+                color: undefined,
+                size: undefined,
             },
         }));
 
@@ -230,7 +238,6 @@ export default function OrderHistoryScreen() {
         router.push(`/orders/${orderId}`);
     };
 
-    // Enhanced reorder with cart store integration
     const handleReorder = async (order: Order) => {
         Alert.alert(
             'Reorder Items',
@@ -253,13 +260,13 @@ export default function OrderHistoryScreen() {
                                     quantity: item.quantity,
                                     maxQuantity: productData?.maxQuantity || 10,
                                     minQuantity: productData?.minQuantity || 1,
-                                    image: item.imageId,
+                                    image: item.imageId, // This will be handled by the cart store
                                     category: productData?.category || 'general',
                                     sku: item.sku || `SKU-${item.productId}`,
-                                    status: productData?.status || 'available',
-                                    storeId: productData?.storeId || 'store_001',
-                                    storeName: productData?.storeName || 'Walmart Supercenter',
-                                    delivery: productData?.delivery || {
+                                    status: 'available', // Default status
+                                    storeId: 'store_001', // Default store
+                                    storeName: 'Walmart Supercenter',
+                                    delivery: {
                                         option: 'pickup' as const,
                                         freeShippingEligible: true,
                                     },
@@ -331,15 +338,16 @@ export default function OrderHistoryScreen() {
         return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     };
 
-    // Smart image loading function
+    // Replace the existing getOrderItemImage function with:
     const getOrderItemImage = (item: OrderItem) => {
         try {
             return getImageById(item.imageId, 'small');
         } catch (error) {
             console.warn(`Failed to load image for item ${item.id}:`, error);
-            return getImageById(1, 'small'); // Ultimate fallback
+            return getImageById(1, 'small');
         }
     };
+
 
     const getStatusColor = (status: string) => {
         switch (status) {

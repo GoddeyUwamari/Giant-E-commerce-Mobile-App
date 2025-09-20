@@ -13,6 +13,9 @@ import {
     Animated,
     StyleSheet,
     Dimensions,
+    Vibration,
+    Keyboard,
+    StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -24,13 +27,10 @@ import { useCartStore } from '../../store/slices/cartSlice';
 import { useAI } from '../../hooks/useAI';
 import {
     ALL_PRODUCTS,
-    getAllSaleProducts,
-    getAllFeaturedProducts,
+    ALL_CATEGORIES,
     getProductsByCategory,
-    CATEGORIES,
     Product
-} from '../../constants/products';
-import { getProductImageBySize } from '../../assets/images/imageLoader';
+} from '../../constants/products/data';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -53,10 +53,12 @@ const COLORS = {
     recentSearchGray: '#F8F8F8',
     aiGreen: '#10B981',
     aiPurple: '#8B5CF6',
+    aiGradientStart: '#667eea',
+    aiGradientEnd: '#764ba2',
 };
 
-// Enhanced search function with AI suggestions
-const searchProducts = (query: string): Product[] => {
+// Enhanced search function
+const searchProducts = (query) => {
     const searchTerm = query.toLowerCase().trim();
     if (!searchTerm) return [];
 
@@ -64,60 +66,63 @@ const searchProducts = (query: string): Product[] => {
         const nameMatch = product.name.toLowerCase().includes(searchTerm);
         const brandMatch = product.brand?.toLowerCase().includes(searchTerm);
         const categoryMatch = product.category.toLowerCase().includes(searchTerm);
-        const descriptionMatch = product.description?.toLowerCase().includes(searchTerm);
-        const featuresMatch = product.features?.some(feature =>
-            feature.toLowerCase().includes(searchTerm)
-        );
 
-        return nameMatch || brandMatch || categoryMatch || descriptionMatch || featuresMatch;
+        return nameMatch || brandMatch || categoryMatch;
+    }).sort((a, b) => {
+        const aRelevance = a.name.toLowerCase().includes(query.toLowerCase()) ? 10 : 5;
+        const bRelevance = b.name.toLowerCase().includes(query.toLowerCase()) ? 10 : 5;
+        return (bRelevance + b.rating) - (aRelevance + a.rating);
     });
 };
 
-// Basic search suggestions (fallback when AI is unavailable)
-const getBasicSearchSuggestions = (query: string): string[] => {
+// Smart fallback suggestions
+const getSmartFallbackSuggestions = (query) => {
     if (!query.trim()) return [];
 
     const searchTerm = query.toLowerCase().trim();
-    const suggestions = new Set<string>();
+    const suggestions = new Set();
 
-    // Get matching product names and brands
     ALL_PRODUCTS.forEach(product => {
-        if (product.name.toLowerCase().includes(searchTerm)) {
+        const name = product.name.toLowerCase();
+        const brand = product.brand?.toLowerCase() || '';
+
+        if (name.includes(searchTerm)) {
             suggestions.add(product.name);
         }
-        if (product.brand?.toLowerCase().includes(searchTerm)) {
-            suggestions.add(product.brand);
+        if (brand.includes(searchTerm)) {
+            suggestions.add(product.brand || '');
         }
     });
 
-    // Get matching categories
-    Object.values(CATEGORIES).forEach(category => {
+    ALL_CATEGORIES.forEach(category => {
         if (category.name.toLowerCase().includes(searchTerm)) {
             suggestions.add(category.name);
         }
     });
 
-    return Array.from(suggestions).slice(0, 6);
+    return Array.from(suggestions).filter(Boolean).slice(0, 8);
 };
 
-export default function SearchScreen(): JSX.Element {
-    const { search: initialSearch } = useLocalSearchParams<{ search?: string }>();
+export default function SearchScreen() {
+    const { search: initialSearch } = useLocalSearchParams();
 
     const [searchQuery, setSearchQuery] = useState(initialSearch || '');
-    const [searchResults, setSearchResults] = useState<Product[]>([]);
-    const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
-    const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
-    const [recentSearches, setRecentSearches] = useState<string[]>([]);
+    const [searchResults, setSearchResults] = useState([]);
+    const [searchSuggestions, setSearchSuggestions] = useState([]);
+    const [recentSearches, setRecentSearches] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [aiEnabled, setAiEnabled] = useState(true);
     const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-    const searchInputRef = useRef<TextInput>(null);
-    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const [searchMode, setSearchMode] = useState('text');
+    const [voiceSearching, setVoiceSearching] = useState(false);
 
-    // AI Hook
-    const { getSearchSuggestions: getAISuggestions, loading: aiLoading } = useAI();
+    const searchInputRef = useRef(null);
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const suggestionsAnim = useRef(new Animated.Value(0)).current;
+    const aiPulseAnim = useRef(new Animated.Value(1)).current;
+    const debounceTimer = useRef();
 
     // Zustand cart store
     const cartItems = useCartStore((state) => state.items);
@@ -125,72 +130,96 @@ export default function SearchScreen(): JSX.Element {
     const addItem = useCartStore((state) => state.addItem);
     const calculateSummary = useCartStore((state) => state.calculateSummary);
 
-    // Enhanced trending searches with AI insights
+    // Trending searches
     const trendingSearches = useMemo(() => {
-        const featuredProducts = getAllFeaturedProducts();
-        const saleProducts = getAllSaleProducts();
-        const trendingTerms = new Set<string>();
+        const trendingTerms = new Set();
 
-        // Extract popular brands from featured products
-        featuredProducts.slice(0, 5).forEach(product => {
-            if (product.brand) {
-                trendingTerms.add(product.brand);
-            }
+        ALL_CATEGORIES.slice(0, 4).forEach(category => {
+            trendingTerms.add(category.name);
         });
 
-        // Add category-based trending terms
-        Object.values(CATEGORIES).forEach(category => {
-            if (category.products.length > 5) {
-                trendingTerms.add(category.name);
-            }
-        });
+        const contextualTrends = [
+            'Wireless Earbuds', 'Smart Home', 'Fitness Tracker', 'Gaming Setup',
+            'Coffee Maker', 'Air Fryer', 'Skincare', 'Office Chair'
+        ];
 
-        // Add AI-powered trending terms
-        ['iPhone', 'Samsung', 'Wireless Headphones', 'Smart TV', 'Air Fryer', 'Gaming', 'Fitness Tracker', 'Coffee Maker'].forEach(term => {
+        contextualTrends.forEach(trend => {
             const hasProducts = ALL_PRODUCTS.some(product =>
-                product.name.toLowerCase().includes(term.toLowerCase())
+                product.name.toLowerCase().includes(trend.toLowerCase())
             );
-            if (hasProducts) {
-                trendingTerms.add(term);
-            }
+            if (hasProducts) trendingTerms.add(trend);
         });
 
-        return Array.from(trendingTerms).slice(0, 8);
+        return Array.from(trendingTerms).slice(0, 12);
     }, []);
 
-    // Popular categories from your system
+    // Popular categories
     const popularCategories = useMemo(() => {
-        return Object.entries(CATEGORIES)
-            .map(([key, category]) => ({
-                id: key,
+        return ALL_CATEGORIES
+            .map(category => ({
+                id: category.slug,
                 name: category.name,
                 icon: category.icon,
                 color: category.color,
-                productCount: category.products.length
+                productCount: category.products?.length || 0,
+                avgRating: category.products?.length > 0 ?
+                    category.products.reduce((sum, p) => sum + p.rating, 0) / category.products.length : 0,
+                trending: category.products?.some(p => p.featured) || false
             }))
-            .sort((a, b) => b.productCount - a.productCount)
-            .slice(0, 6);
+            .sort((a, b) => {
+                if (a.trending !== b.trending) return b.trending ? 1 : -1;
+                if (a.productCount !== b.productCount) return b.productCount - a.productCount;
+                return b.avgRating - a.avgRating;
+            })
+            .slice(0, 8);
     }, []);
+
+    // AI pulse animation
+    useEffect(() => {
+        if (aiEnabled) {
+            const pulse = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(aiPulseAnim, {
+                        toValue: 1.1,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(aiPulseAnim, {
+                        toValue: 1,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            pulse.start();
+            return () => pulse.stop();
+        }
+    }, [aiEnabled]);
 
     useEffect(() => {
         loadRecentSearches();
         calculateSummary();
 
-        // Entrance animation
-        Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-        }).start();
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 400,
+                useNativeDriver: true,
+            }),
+            Animated.spring(suggestionsAnim, {
+                toValue: 1,
+                tension: 100,
+                friction: 8,
+                useNativeDriver: true,
+            }),
+        ]).start();
 
-        // If initial search provided, perform search
         if (initialSearch) {
             performSearch(initialSearch);
         } else {
-            // Auto-focus search input only if no initial search
             setTimeout(() => {
                 searchInputRef.current?.focus();
-            }, 100);
+            }, 300);
         }
     }, []);
 
@@ -198,46 +227,43 @@ export default function SearchScreen(): JSX.Element {
         calculateSummary();
     }, [cartItems, calculateSummary]);
 
-    // Enhanced search suggestions with AI
+    // Debounced search suggestions
     useEffect(() => {
+        if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current);
+        }
+
         if (searchQuery.length > 1) {
-            handleSearchSuggestions(searchQuery);
+            debounceTimer.current = setTimeout(() => {
+                handleSearchSuggestions(searchQuery);
+            }, 300);
         } else {
             setSearchSuggestions([]);
-            setAiSuggestions([]);
             setShowSuggestions(false);
         }
+
+        return () => {
+            if (debounceTimer.current) {
+                clearTimeout(debounceTimer.current);
+            }
+        };
     }, [searchQuery]);
 
-    const handleSearchSuggestions = async (query: string) => {
+    const handleSearchSuggestions = async (query) => {
+        if (!query.trim()) return;
+
         setSuggestionsLoading(true);
+        setShowSuggestions(true);
+
+        Animated.timing(suggestionsAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+        }).start();
 
         try {
-            // Always get basic suggestions as fallback
-            const basicSuggestions = getBasicSearchSuggestions(query);
-            setSearchSuggestions(basicSuggestions);
-
-            // Try to get AI-enhanced suggestions
-            if (aiEnabled) {
-                try {
-                    const categories = Object.values(CATEGORIES).map(cat => cat.name);
-                    const aiResults = await getAISuggestions(query, categories);
-
-                    if (aiResults && aiResults.length > 0) {
-                        setAiSuggestions(aiResults);
-                        setShowSuggestions(true);
-                    } else {
-                        // Use basic suggestions if AI fails
-                        setShowSuggestions(basicSuggestions.length > 0);
-                    }
-                } catch (aiError) {
-                    console.warn('AI suggestions failed, using basic suggestions:', aiError);
-                    setAiSuggestions([]);
-                    setShowSuggestions(basicSuggestions.length > 0);
-                }
-            } else {
-                setShowSuggestions(basicSuggestions.length > 0);
-            }
+            const fallbackSuggestions = getSmartFallbackSuggestions(query);
+            setSearchSuggestions(fallbackSuggestions);
         } catch (error) {
             console.error('Error getting search suggestions:', error);
             setShowSuggestions(false);
@@ -248,28 +274,31 @@ export default function SearchScreen(): JSX.Element {
 
     const loadRecentSearches = async () => {
         try {
-            const recent = await AsyncStorage.getItem('recent_searches');
+            const recent = await AsyncStorage.getItem('recent_searches_v2');
             if (recent) {
-                setRecentSearches(JSON.parse(recent));
+                const searches = JSON.parse(recent);
+                const validSearches = searches.filter((search) =>
+                    typeof search === 'string' && search.trim().length > 0
+                ).slice(0, 20);
+                setRecentSearches(validSearches);
             }
         } catch (error) {
             console.error('Error loading recent searches:', error);
         }
     };
 
-    const saveRecentSearch = async (query: string) => {
+    const saveRecentSearch = async (query) => {
+        if (!query.trim()) return;
+
         try {
-            const recent = await AsyncStorage.getItem('recent_searches');
+            const recent = await AsyncStorage.getItem('recent_searches_v2');
             let searches = recent ? JSON.parse(recent) : [];
 
-            // Remove if exists and add to front
-            searches = searches.filter((s: string) => s !== query);
-            searches.unshift(query);
+            searches = searches.filter((s) => s.toLowerCase() !== query.toLowerCase());
+            searches.unshift(query.trim());
+            searches = searches.slice(0, 20);
 
-            // Keep only last 15 searches
-            searches = searches.slice(0, 15);
-
-            await AsyncStorage.setItem('recent_searches', JSON.stringify(searches));
+            await AsyncStorage.setItem('recent_searches_v2', JSON.stringify(searches));
             setRecentSearches(searches);
         } catch (error) {
             console.error('Error saving recent search:', error);
@@ -279,7 +308,7 @@ export default function SearchScreen(): JSX.Element {
     const clearRecentSearches = async () => {
         Alert.alert(
             'Clear Search History',
-            'Are you sure you want to clear all recent searches?',
+            'This will remove all your recent searches. Continue?',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -287,8 +316,11 @@ export default function SearchScreen(): JSX.Element {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await AsyncStorage.removeItem('recent_searches');
+                            await AsyncStorage.removeItem('recent_searches_v2');
                             setRecentSearches([]);
+                            if (Platform.OS === 'ios') {
+                                Vibration.vibrate(50);
+                            }
                         } catch (error) {
                             console.error('Error clearing recent searches:', error);
                         }
@@ -298,7 +330,7 @@ export default function SearchScreen(): JSX.Element {
         );
     };
 
-    const performSearch = async (query: string) => {
+    const performSearch = async (query) => {
         if (!query.trim()) {
             setSearchResults([]);
             setIsSearching(false);
@@ -308,57 +340,114 @@ export default function SearchScreen(): JSX.Element {
         setIsLoading(true);
         setIsSearching(true);
         setShowSuggestions(false);
+        Keyboard.dismiss();
+
+        Animated.timing(suggestionsAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+        }).start();
 
         try {
-            // Simulate search delay for better UX
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Perform actual search
-            const results = searchProducts(query.trim());
-            setSearchResults(results);
-
-            // Save to recent searches
+            let searchResults = searchProducts(query.trim());
+            setSearchResults(searchResults);
             await saveRecentSearch(query.trim());
 
-            console.log(`Found ${results.length} products for: "${query}"`);
+            if (Platform.OS === 'ios' && searchResults.length > 0) {
+                Vibration.vibrate(20);
+            }
+
+            console.log(`Found ${searchResults.length} products for: "${query}"`);
         } catch (error) {
             console.error('Search error:', error);
-            Alert.alert('Error', 'Failed to perform search');
+            Alert.alert('Search Error', 'Failed to perform search. Please try again.');
             setSearchResults([]);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleSearch = (query: string) => {
+    const handleVoiceSearch = async () => {
+        if (voiceSearching) return;
+
+        setVoiceSearching(true);
+        setSearchMode('voice');
+
+        try {
+            Alert.alert(
+                'Voice Search',
+                'Voice search feature coming soon! Speak your search query.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Try Text Search',
+                        onPress: () => {
+                            setSearchMode('text');
+                            searchInputRef.current?.focus();
+                        }
+                    }
+                ]
+            );
+        } catch (error) {
+            console.error('Voice search error:', error);
+            Alert.alert('Error', 'Voice search is not available right now.');
+        } finally {
+            setVoiceSearching(false);
+            setSearchMode('text');
+        }
+    };
+
+    const handleBarcodeSearch = () => {
+        setSearchMode('barcode');
+        Alert.alert(
+            'Barcode Scanner',
+            'Point your camera at a product barcode to search.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Open Camera',
+                    onPress: () => {
+                        console.log('Opening barcode scanner...');
+                        setSearchMode('text');
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleSearch = (query) => {
         performSearch(query);
     };
 
-    const handleSuggestionPress = useCallback((suggestion: string | any) => {
+    const handleSuggestionPress = useCallback((suggestion) => {
         const searchTerm = typeof suggestion === 'string' ? suggestion : suggestion.text;
         setSearchQuery(searchTerm);
         performSearch(searchTerm);
+
+        if (Platform.OS === 'ios') {
+            Vibration.vibrate(10);
+        }
     }, []);
 
-    const handleRecentSearchPress = useCallback((searchTerm: string) => {
+    const handleRecentSearchPress = useCallback((searchTerm) => {
         setSearchQuery(searchTerm);
         performSearch(searchTerm);
     }, []);
 
-    const handleTrendingSearchPress = useCallback((searchTerm: string) => {
+    const handleTrendingSearchPress = useCallback((searchTerm) => {
         setSearchQuery(searchTerm);
         performSearch(searchTerm);
     }, []);
 
-    const handleCategoryPress = useCallback((categoryKey: string) => {
+    const handleCategoryPress = useCallback((categoryKey) => {
         router.push(`/category/${categoryKey}`);
     }, []);
 
-    const handleProductPress = useCallback((productId: string) => {
+    const handleProductPress = useCallback((productId) => {
         router.push(`/product/${productId}`);
     }, []);
 
-    const handleAddToCart = useCallback(async (product: Product) => {
+    const handleAddToCart = useCallback(async (product) => {
         try {
             const success = await addItem({
                 productId: product.id,
@@ -369,7 +458,7 @@ export default function SearchScreen(): JSX.Element {
                 quantity: 1,
                 maxQuantity: product.maxQuantity,
                 minQuantity: product.minQuantity,
-                image: product.primaryImage,
+                image: product.image,
                 category: product.category,
                 sku: product.sku,
                 status: product.status,
@@ -379,6 +468,10 @@ export default function SearchScreen(): JSX.Element {
             });
 
             if (success) {
+                if (Platform.OS === 'ios') {
+                    Vibration.vibrate(30);
+                }
+
                 Alert.alert(
                     'Added to Cart',
                     `${product.name} has been added to your cart.`,
@@ -390,7 +483,7 @@ export default function SearchScreen(): JSX.Element {
             }
         } catch (error) {
             console.error('Error adding to cart:', error);
-            Alert.alert('Error', 'Failed to add item to cart');
+            Alert.alert('Error', 'Failed to add item to cart. Please try again.');
         }
     }, [addItem]);
 
@@ -399,541 +492,576 @@ export default function SearchScreen(): JSX.Element {
         setSearchResults([]);
         setIsSearching(false);
         setShowSuggestions(false);
-        setAiSuggestions([]);
+
+        Animated.timing(suggestionsAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+        }).start();
+
         searchInputRef.current?.focus();
     };
 
     const toggleAI = () => {
         setAiEnabled(!aiEnabled);
+
+        if (Platform.OS === 'ios') {
+            Vibration.vibrate(!aiEnabled ? 20 : 50);
+        }
+
         if (!aiEnabled) {
-            // Re-fetch suggestions with AI when enabling
             if (searchQuery.length > 1) {
                 handleSearchSuggestions(searchQuery);
             }
         }
     };
 
-    const renderSearchResult = ({ item }: { item: Product }) => (
-        <TouchableOpacity
-            style={styles.productCard}
-            onPress={() => handleProductPress(item.id)}
-            activeOpacity={0.9}
-        >
-            <Image
-                source={getProductImageBySize(item.id, 'medium')}
-                style={styles.productImage}
-                resizeMode="cover"
-            />
-
-            {item.badge && (
-                <View style={[styles.productBadge, { backgroundColor: item.badgeColor || COLORS.error }]}>
-                    <Text style={styles.productBadgeText}>{item.badge}</Text>
-                </View>
-            )}
-
-            <View style={styles.productInfo}>
-                <Text style={styles.productBrand}>{item.brand}</Text>
-                <Text style={styles.productName} numberOfLines={2}>
-                    {item.name}
-                </Text>
-
-                <View style={styles.productRating}>
-                    <View style={styles.starsContainer}>
-                        {[...Array(5)].map((_, i) => (
-                            <Ionicons
-                                key={i}
-                                name="star"
-                                size={12}
-                                color={i < Math.floor(item.rating) ? "#FFC107" : "#E0E0E0"}
-                            />
-                        ))}
-                    </View>
-                    <Text style={styles.ratingText}>
-                        {item.rating} ({item.reviewCount})
-                    </Text>
-                </View>
-
-                <View style={styles.priceContainer}>
-                    <Text style={styles.currentPrice}>${item.price.toFixed(2)}</Text>
-                    {item.originalPrice && item.originalPrice > item.price && (
-                        <Text style={styles.originalPrice}>
-                            ${item.originalPrice.toFixed(2)}
-                        </Text>
-                    )}
-                </View>
-
-                <Text style={styles.shippingInfo}>
-                    {item.shipping?.free ? 'FREE shipping' : `Shipping: $${item.shipping?.cost || 0}`}
-                </Text>
-
-                {item.inStock ? (
-                    <TouchableOpacity
-                        style={styles.addToCartButton}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            handleAddToCart(item);
-                        }}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="add" size={16} color={COLORS.white} />
-                        <Text style={styles.addToCartText}>Add to Cart</Text>
-                    </TouchableOpacity>
-                ) : (
-                    <View style={styles.outOfStockButton}>
-                        <Text style={styles.outOfStockText}>Out of Stock</Text>
-                    </View>
-                )}
-            </View>
-        </TouchableOpacity>
-    );
-
-    const renderSearchSuggestion = ({ item, index }: { item: string | any, index: number }) => {
-        const isAISuggestion = typeof item === 'object';
-        const suggestionText = isAISuggestion ? item.text : item;
-        const suggestionType = isAISuggestion ? item.type : 'basic';
-        const popularity = isAISuggestion ? item.popularity : 0;
-
-        return (
-            <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() => handleSuggestionPress(item)}
-                activeOpacity={0.7}
-            >
-                <View style={styles.suggestionLeft}>
-                    <Ionicons
-                        name={
-                            suggestionType === 'product' ? 'cube-outline' :
-                                suggestionType === 'category' ? 'grid-outline' :
-                                    suggestionType === 'brand' ? 'business-outline' :
-                                        'search'
-                        }
-                        size={16}
-                        color={isAISuggestion ? COLORS.aiPurple : COLORS.mediumGray}
-                    />
-                    <Text style={[
-                        styles.suggestionText,
-                        isAISuggestion && styles.aiSuggestionText
-                    ]}>
-                        {suggestionText}
-                    </Text>
-                </View>
-
-                <View style={styles.suggestionRight}>
-                    {isAISuggestion && (
-                        <View style={styles.aiSuggestionBadge}>
-                            <Ionicons name="sparkles" size={12} color={COLORS.aiGreen} />
-                            <Text style={styles.aiSuggestionBadgeText}>AI</Text>
-                        </View>
-                    )}
-                    {popularity && popularity > 80 && (
-                        <View style={styles.hotBadge}>
-                            <Text style={styles.hotBadgeText}>HOT</Text>
-                        </View>
-                    )}
-                    <Ionicons name="arrow-up-outline" size={14} color={COLORS.mediumGray} />
-                </View>
-            </TouchableOpacity>
-        );
-    };
+    // Quick actions
+    const quickActions = useMemo(() => [
+        {
+            title: 'New Arrivals',
+            icon: 'sparkles',
+            iconColor: COLORS.success,
+            backgroundColor: '#ECFDF5',
+            onPress: () => router.push('/product?filter=new-arrivals'),
+            badge: 'Hot'
+        },
+        {
+            title: 'Flash Sale',
+            icon: 'flash',
+            iconColor: COLORS.error,
+            backgroundColor: '#FEE2E2',
+            onPress: () => router.push('/product?filter=sale'),
+            badge: '50% Off'
+        },
+        {
+            title: 'All Products',
+            icon: 'grid',
+            iconColor: COLORS.walmartBlue,
+            backgroundColor: '#EFF6FF',
+            onPress: () => router.push('/product'),
+            badge: `${ALL_PRODUCTS.length}+`
+        },
+        {
+            title: 'Top Rated',
+            icon: 'star',
+            iconColor: COLORS.warning,
+            backgroundColor: '#FEF3C7',
+            onPress: () => router.push('/product?filter=top-rated'),
+            badge: '4.5★'
+        }
+    ], []);
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <View style={styles.headerContent}>
-                    <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={() => router.back()}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="arrow-back" size={24} color={COLORS.white} />
-                    </TouchableOpacity>
+        <View style={styles.container}>
+            <StatusBar
+                barStyle="light-content"
+                backgroundColor={COLORS.walmartBlue}
+                translucent={false}
+            />
 
-                    <View style={styles.searchContainer}>
-                        <Ionicons name="search" size={20} color={COLORS.mediumGray} />
-                        <TextInput
-                            ref={searchInputRef}
-                            style={styles.searchInput}
-                            placeholder="Search Walmart"
-                            placeholderTextColor={COLORS.mediumGray}
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            onSubmitEditing={() => handleSearch(searchQuery)}
-                            returnKeyType="search"
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                        />
-                        {searchQuery.length > 0 && (
-                            <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-                                <Ionicons name="close-circle" size={20} color={COLORS.mediumGray} />
-                            </TouchableOpacity>
-                        )}
-                    </View>
+            {/* Header with Full Background Coverage */}
+            <View style={styles.headerContainer}>
+                <SafeAreaView style={styles.safeAreaHeader}>
+                    <View style={styles.headerContent}>
+                        <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={() => router.back()}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={[styles.aiToggleButton, { backgroundColor: aiEnabled ? COLORS.aiGreen : 'rgba(255,255,255,0.2)' }]}
-                        onPress={toggleAI}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="sparkles" size={18} color={COLORS.white} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.barcodeButton}
-                        onPress={() => Alert.alert('Barcode Scanner', 'Barcode scanning feature coming soon!')}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="barcode-outline" size={24} color={COLORS.white} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.cartButton}
-                        onPress={() => router.push('/(modals)/cart')}
-                        activeOpacity={0.7}
-                    >
-                        <View style={styles.cartIconContainer}>
-                            <Ionicons name="bag-outline" size={24} color={COLORS.white} />
-                            {summary.itemCount > 0 && (
-                                <View style={styles.cartBadge}>
-                                    <Text style={styles.cartBadgeText}>{summary.itemCount}</Text>
-                                </View>
+                        <View style={styles.searchContainer}>
+                            <Ionicons
+                                name={searchMode === 'voice' ? 'mic' : searchMode === 'barcode' ? 'barcode' : 'search'}
+                                size={20}
+                                color={searchMode === 'text' ? COLORS.mediumGray : COLORS.walmartBlue}
+                            />
+                            <TextInput
+                                ref={searchInputRef}
+                                style={[styles.searchInput, searchMode !== 'text' && styles.searchInputDisabled]}
+                                placeholder={
+                                    searchMode === 'voice' ? 'Listening...' :
+                                        searchMode === 'barcode' ? 'Scan barcode...' :
+                                            'Search Walmart with AI'
+                                }
+                                placeholderTextColor={COLORS.mediumGray}
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                onSubmitEditing={() => handleSearch(searchQuery)}
+                                returnKeyType="search"
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                editable={searchMode === 'text'}
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+                                    <Ionicons name="close-circle" size={20} color={COLORS.mediumGray} />
+                                </TouchableOpacity>
                             )}
                         </View>
-                    </TouchableOpacity>
-                </View>
-            </View>
 
-            {/* Search Suggestions Overlay */}
-            {showSuggestions && (
-                <View style={styles.suggestionsContainer}>
-                    {suggestionsLoading ? (
-                        <View style={styles.suggestionsLoading}>
-                            <ActivityIndicator size="small" color={COLORS.walmartBlue} />
-                            <Text style={styles.suggestionsLoadingText}>Getting smart suggestions...</Text>
-                        </View>
-                    ) : (
-                        <FlatList
-                            data={aiSuggestions.length > 0 ? aiSuggestions : searchSuggestions}
-                            renderItem={renderSearchSuggestion}
-                            keyExtractor={(item, index) => `suggestion-${index}`}
-                            style={styles.suggestionsList}
-                            keyboardShouldPersistTaps="handled"
-                            showsVerticalScrollIndicator={false}
-                        />
-                    )}
-
-                    {aiEnabled && !suggestionsLoading && (
-                        <View style={styles.aiPoweredFooter}>
-                            <Ionicons name="sparkles" size={12} color={COLORS.aiGreen} />
-                            <Text style={styles.aiPoweredText}>AI-powered suggestions</Text>
-                        </View>
-                    )}
-                </View>
-            )}
-
-            {/* Content */}
-            <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
-                {isSearching && searchResults.length === 0 && !isLoading ? (
-                    // No Results State
-                    <View style={styles.noResultsContainer}>
-                        <Ionicons name="search-outline" size={64} color={COLORS.mediumGray} />
-                        <Text style={styles.noResultsTitle}>No results found</Text>
-                        <Text style={styles.noResultsText}>
-                            Try different keywords or check your spelling
-                        </Text>
                         <TouchableOpacity
-                            style={styles.browseAllButton}
-                            onPress={() => router.push('/product')}
-                            activeOpacity={0.8}
+                            style={styles.voiceButton}
+                            onPress={handleVoiceSearch}
+                            activeOpacity={0.7}
                         >
-                            <Text style={styles.browseAllText}>Browse All Products</Text>
+                            <Ionicons
+                                name={voiceSearching ? "mic" : "mic-outline"}
+                                size={20}
+                                color={voiceSearching ? COLORS.error : COLORS.white}
+                            />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.barcodeButton}
+                            onPress={handleBarcodeSearch}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="barcode-outline" size={20} color={COLORS.white} />
+                        </TouchableOpacity>
+
+                        <Animated.View style={{ transform: [{ scale: aiPulseAnim }] }}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.aiToggleButton,
+                                    {
+                                        backgroundColor: aiEnabled ? COLORS.aiGreen : 'rgba(255,255,255,0.2)',
+                                        borderWidth: aiEnabled ? 2 : 0,
+                                        borderColor: aiEnabled ? COLORS.white : 'transparent'
+                                    }
+                                ]}
+                                onPress={toggleAI}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="sparkles" size={16} color={COLORS.white} />
+                            </TouchableOpacity>
+                        </Animated.View>
+
+                        <TouchableOpacity
+                            style={styles.cartButton}
+                            onPress={() => router.push('/(modals)/cart')}
+                            activeOpacity={0.7}
+                        >
+                            <View style={styles.cartIconContainer}>
+                                <Ionicons name="bag-outline" size={24} color={COLORS.white} />
+                                {summary.itemCount > 0 && (
+                                    <Animated.View
+                                        style={[
+                                            styles.cartBadge,
+                                            { transform: [{ scale: aiPulseAnim }] }
+                                        ]}
+                                    >
+                                        <Text style={styles.cartBadgeText}>{summary.itemCount}</Text>
+                                    </Animated.View>
+                                )}
+                            </View>
                         </TouchableOpacity>
                     </View>
-                ) : isSearching && searchResults.length > 0 ? (
-                    // Search Results
-                    <View style={styles.resultsContainer}>
-                        <View style={styles.resultsHeader}>
-                            <Text style={styles.resultsCount}>
-                                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"
-                            </Text>
-                            {aiEnabled && (
-                                <View style={styles.aiResultsBadge}>
-                                    <Ionicons name="sparkles" size={12} color={COLORS.aiGreen} />
-                                    <Text style={styles.aiResultsText}>AI Enhanced</Text>
-                                </View>
-                            )}
-                        </View>
-                        <FlatList
-                            data={searchResults}
-                            renderItem={renderSearchResult}
-                            keyExtractor={(item) => item.id}
-                            numColumns={2}
-                            contentContainerStyle={styles.resultsGrid}
-                            columnWrapperStyle={styles.resultsRow}
-                            showsVerticalScrollIndicator={false}
-                        />
-                    </View>
-                ) : (
-                    // Default Search Home
-                    <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-                        {/* AI Status Banner */}
-                        <View style={[styles.sectionCard, styles.aiStatusCard]}>
-                            <View style={styles.aiStatusContent}>
-                                <View style={styles.aiStatusLeft}>
-                                    <Ionicons name="sparkles" size={20} color={aiEnabled ? COLORS.aiGreen : COLORS.mediumGray} />
-                                    <Text style={styles.aiStatusTitle}>
-                                        AI-Powered Search {aiEnabled ? 'Enabled' : 'Disabled'}
-                                    </Text>
-                                </View>
-                                <TouchableOpacity
-                                    style={[styles.aiToggle, { backgroundColor: aiEnabled ? COLORS.aiGreen : COLORS.mediumGray }]}
-                                    onPress={toggleAI}
-                                    activeOpacity={0.8}
-                                >
-                                    <Text style={styles.aiToggleText}>{aiEnabled ? 'ON' : 'OFF'}</Text>
-                                </TouchableOpacity>
-                            </View>
-                            <Text style={styles.aiStatusDescription}>
-                                {aiEnabled ? 'Get smarter search suggestions powered by AI for better product discovery.' : 'Enable AI for enhanced search suggestions and personalized recommendations.'}
-                            </Text>
-                        </View>
+                </SafeAreaView>
+            </View>
 
-                        {/* Recent Searches */}
-                        {recentSearches.length > 0 && (
+            {/* Main content wrapper */}
+            <SafeAreaView style={styles.mainContent}>
+                {/* Search Suggestions */}
+                {showSuggestions && (
+                    <Animated.View
+                        style={[
+                            styles.suggestionsContainer,
+                            {
+                                opacity: suggestionsAnim,
+                                transform: [{
+                                    translateY: suggestionsAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [-20, 0],
+                                    })
+                                }]
+                            }
+                        ]}
+                    >
+                        {suggestionsLoading ? (
+                            <View style={styles.suggestionsLoading}>
+                                <ActivityIndicator size="small" color={COLORS.aiGreen} />
+                                <Text style={styles.suggestionsLoadingText}>
+                                    {aiEnabled ? 'AI is thinking...' : 'Searching suggestions...'}
+                                </Text>
+                            </View>
+                        ) : (
+                            <FlatList
+                                data={searchSuggestions}
+                                renderItem={({ item, index }) => (
+                                    <TouchableOpacity
+                                        style={styles.suggestionItem}
+                                        onPress={() => handleSuggestionPress(item)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Ionicons name="search" size={16} color={COLORS.mediumGray} />
+                                        <Text style={styles.suggestionText}>{item}</Text>
+                                        <Ionicons name="arrow-up-outline" size={14} color={COLORS.mediumGray} />
+                                    </TouchableOpacity>
+                                )}
+                                keyExtractor={(item, index) => `suggestion-${index}`}
+                                style={styles.suggestionsList}
+                                keyboardShouldPersistTaps="handled"
+                                showsVerticalScrollIndicator={false}
+                            />
+                        )}
+                    </Animated.View>
+                )}
+
+                {/* Content Container */}
+                <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
+                    {isSearching && searchResults.length === 0 && !isLoading ? (
+                        // No Results State
+                        <View style={styles.noResultsContainer}>
+                            <Ionicons name="search-outline" size={64} color={COLORS.mediumGray} />
+                            <Text style={styles.noResultsTitle}>No results found</Text>
+                            <Text style={styles.noResultsText}>
+                                Try different keywords or browse our categories
+                            </Text>
+
+                            <TouchableOpacity
+                                style={styles.browseAllButton}
+                                onPress={() => router.push('/product')}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="grid-outline" size={20} color={COLORS.white} />
+                                <Text style={styles.browseAllText}>Browse All Products</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : isSearching && searchResults.length > 0 ? (
+                        // Search Results
+                        <View style={styles.resultsContainer}>
+                            <View style={styles.resultsHeader}>
+                                <Text style={styles.resultsCount}>
+                                    {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"
+                                </Text>
+                            </View>
+
+                            <FlatList
+                                data={searchResults}
+                                renderItem={({ item, index }) => (
+                                    <TouchableOpacity
+                                        style={styles.productCard}
+                                        onPress={() => handleProductPress(item.id)}
+                                        activeOpacity={0.9}
+                                    >
+                                        <Image
+                                            source={{ uri: item.image }}
+                                            style={styles.productImage}
+                                            resizeMode="cover"
+                                        />
+
+                                        <View style={styles.productInfo}>
+                                            <Text style={styles.productBrand}>{item.brand}</Text>
+                                            <Text style={styles.productName} numberOfLines={2}>
+                                                {item.name}
+                                            </Text>
+
+                                            <View style={styles.productRating}>
+                                                <View style={styles.starsContainer}>
+                                                    {[...Array(5)].map((_, i) => (
+                                                        <Ionicons
+                                                            key={i}
+                                                            name="star"
+                                                            size={12}
+                                                            color={i < Math.floor(item.rating) ? "#FFC107" : "#E0E0E0"}
+                                                        />
+                                                    ))}
+                                                </View>
+                                                <Text style={styles.ratingText}>
+                                                    {item.rating} ({item.reviewCount})
+                                                </Text>
+                                            </View>
+
+                                            <View style={styles.priceContainer}>
+                                                <Text style={styles.currentPrice}>${item.price.toFixed(2)}</Text>
+                                                {item.originalPrice && item.originalPrice > item.price && (
+                                                    <Text style={styles.originalPrice}>
+                                                        ${item.originalPrice.toFixed(2)}
+                                                    </Text>
+                                                )}
+                                            </View>
+
+                                            {item.inStock ? (
+                                                <TouchableOpacity
+                                                    style={styles.addToCartButton}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAddToCart(item);
+                                                    }}
+                                                    activeOpacity={0.8}
+                                                >
+                                                    <Ionicons name="add" size={16} color={COLORS.white} />
+                                                    <Text style={styles.addToCartText}>Add to Cart</Text>
+                                                </TouchableOpacity>
+                                            ) : (
+                                                <View style={styles.outOfStockButton}>
+                                                    <Text style={styles.outOfStockText}>Out of Stock</Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+                                keyExtractor={(item) => item.id}
+                                numColumns={2}
+                                contentContainerStyle={styles.resultsGrid}
+                                columnWrapperStyle={styles.resultsRow}
+                                showsVerticalScrollIndicator={false}
+                            />
+                        </View>
+                    ) : (
+                        // Default Search Home
+                        <ScrollView
+                            style={styles.scrollContainer}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.scrollContent}
+                        >
+                            {/* AI Status Banner */}
                             <View style={styles.sectionCard}>
-                                <View style={styles.sectionHeader}>
-                                    <Text style={styles.sectionTitle}>Recent Searches</Text>
-                                    <TouchableOpacity onPress={clearRecentSearches}>
-                                        <Text style={styles.clearAllText}>Clear All</Text>
+                                <View style={styles.aiStatusContent}>
+                                    <View style={styles.aiStatusLeft}>
+                                        <Ionicons
+                                            name="sparkles"
+                                            size={24}
+                                            color={aiEnabled ? COLORS.aiGreen : COLORS.mediumGray}
+                                        />
+                                        <View style={styles.aiStatusTextContainer}>
+                                            <Text style={styles.aiStatusTitle}>
+                                                AI-Powered Search
+                                            </Text>
+                                            <Text style={styles.aiStatusSubtitle}>
+                                                {aiEnabled ? 'Getting smarter results' : 'Basic search mode'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.aiToggle,
+                                            { backgroundColor: aiEnabled ? COLORS.aiGreen : COLORS.mediumGray }
+                                        ]}
+                                        onPress={toggleAI}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={styles.aiToggleText}>{aiEnabled ? 'ON' : 'OFF'}</Text>
                                     </TouchableOpacity>
                                 </View>
-                                <View style={styles.recentSearchesContainer}>
-                                    {recentSearches.slice(0, 5).map((search, index) => (
+                                <Text style={styles.aiStatusDescription}>
+                                    {aiEnabled
+                                        ? 'AI analyzes your search to provide personalized results, smart filters, and better product discovery.'
+                                        : 'Enable AI for enhanced search suggestions, smart filtering, and personalized recommendations.'
+                                    }
+                                </Text>
+                            </View>
+
+                            {/* Recent Searches */}
+                            {recentSearches.length > 0 && (
+                                <View style={styles.sectionCard}>
+                                    <View style={styles.sectionHeader}>
+                                        <View style={styles.sectionTitleContainer}>
+                                            <Ionicons name="time-outline" size={20} color={COLORS.textPrimary} />
+                                            <Text style={styles.sectionTitle}>Recent Searches</Text>
+                                        </View>
+                                        <TouchableOpacity onPress={clearRecentSearches}>
+                                            <Text style={styles.clearAllText}>Clear All</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <View style={styles.recentSearchesContainer}>
+                                        {recentSearches.slice(0, 6).map((search, index) => (
+                                            <TouchableOpacity
+                                                key={index}
+                                                style={styles.recentSearchItem}
+                                                onPress={() => handleRecentSearchPress(search)}
+                                                activeOpacity={0.7}
+                                            >
+                                                <Ionicons name="search" size={14} color={COLORS.mediumGray} />
+                                                <Text style={styles.recentSearchText}>{search}</Text>
+                                                <Ionicons name="arrow-up-outline" size={14} color={COLORS.mediumGray} />
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
+
+                            {/* Trending Searches */}
+                            <View style={styles.sectionCard}>
+                                <View style={styles.sectionHeader}>
+                                    <View style={styles.sectionTitleContainer}>
+                                        <Ionicons name="trending-up" size={20} color={COLORS.error} />
+                                        <Text style={styles.sectionTitle}>Trending Now</Text>
+                                    </View>
+                                </View>
+                                <FlatList
+                                    data={trendingSearches}
+                                    renderItem={({ item, index }) => (
                                         <TouchableOpacity
-                                            key={index}
-                                            style={styles.recentSearchItem}
-                                            onPress={() => handleRecentSearchPress(search)}
-                                            activeOpacity={0.7}
+                                            style={styles.trendingTag}
+                                            onPress={() => handleTrendingSearchPress(item)}
+                                            activeOpacity={0.8}
                                         >
-                                            <Ionicons name="time-outline" size={16} color={COLORS.mediumGray} />
-                                            <Text style={styles.recentSearchText}>{search}</Text>
+                                            <Ionicons name="trending-up" size={14} color={COLORS.walmartBlue} />
+                                            <Text style={styles.trendingTagText}>{item}</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                    keyExtractor={(item, index) => `trending-${index}`}
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.trendingScrollContainer}
+                                />
+                            </View>
+
+                            {/* Popular Categories */}
+                            <View style={styles.sectionCard}>
+                                <View style={styles.sectionHeader}>
+                                    <View style={styles.sectionTitleContainer}>
+                                        <Ionicons name="grid-outline" size={20} color={COLORS.walmartBlue} />
+                                        <Text style={styles.sectionTitle}>Browse Categories</Text>
+                                    </View>
+                                </View>
+                                <View style={styles.categoriesList}>
+                                    {popularCategories.map((category, index) => (
+                                        <TouchableOpacity
+                                            key={category.id}
+                                            style={styles.categoryItem}
+                                            onPress={() => handleCategoryPress(category.id)}
+                                            activeOpacity={0.8}
+                                        >
+                                            <View style={[styles.categoryIconContainer, { backgroundColor: category.color }]}>
+                                                <Ionicons name={category.icon} size={24} color={COLORS.white} />
+                                            </View>
+                                            <View style={styles.categoryContent}>
+                                                <Text style={styles.categoryText}>{category.name}</Text>
+                                                <Text style={styles.categoryCount}>
+                                                    {category.productCount} items • {category.avgRating.toFixed(1)}★
+                                                </Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color={COLORS.mediumGray} />
                                         </TouchableOpacity>
                                     ))}
                                 </View>
                             </View>
-                        )}
 
-                        {/* Trending Searches */}
-                        <View style={styles.sectionCard}>
-                            <View style={styles.sectionHeader}>
-                                <Text style={styles.sectionTitle}>Trending Now</Text>
+                            {/* Quick Actions */}
+                            <View style={styles.quickActionsContainer}>
+                                <FlatList
+                                    data={quickActions}
+                                    renderItem={({ item, index }) => (
+                                        <TouchableOpacity
+                                            style={styles.quickAction}
+                                            onPress={item.onPress}
+                                            activeOpacity={0.8}
+                                        >
+                                            <View style={[styles.quickActionIcon, { backgroundColor: item.backgroundColor }]}>
+                                                <Ionicons name={item.icon} size={24} color={item.iconColor} />
+                                            </View>
+                                            <Text style={styles.quickActionText}>{item.title}</Text>
+                                            {item.badge && (
+                                                <View style={styles.quickActionBadge}>
+                                                    <Text style={styles.quickActionBadgeText}>{item.badge}</Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    )}
+                                    keyExtractor={(item, index) => `action-${index}`}
+                                    numColumns={2}
+                                    columnWrapperStyle={styles.quickActionsRow}
+                                    scrollEnabled={false}
+                                />
                             </View>
-                            <View style={styles.trendingContainer}>
-                                {trendingSearches.map((trend, index) => (
-                                    <TouchableOpacity
-                                        key={index}
-                                        style={styles.trendingTag}
-                                        onPress={() => handleTrendingSearchPress(trend)}
-                                        activeOpacity={0.8}
-                                    >
-                                        <Ionicons name="trending-up" size={14} color={COLORS.walmartBlue} />
-                                        <Text style={styles.trendingTagText}>{trend}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
+                        </ScrollView>
+                    )}
+                </Animated.View>
+
+                {/* Loading Overlay */}
+                {isLoading && (
+                    <Animated.View
+                        style={[
+                            styles.loadingOverlay,
+                            { opacity: fadeAnim }
+                        ]}
+                    >
+                        <View style={styles.loadingContent}>
+                            <ActivityIndicator size="large" color={COLORS.walmartBlue} />
+                            <Text style={styles.loadingText}>
+                                {aiEnabled ? 'AI is searching...' : 'Searching...'}
+                            </Text>
                         </View>
-
-                        {/* Popular Categories */}
-                        <View style={[styles.sectionCard, styles.lastSection]}>
-                            <View style={styles.sectionHeader}>
-                                <Text style={styles.sectionTitle}>Shop by Category</Text>
-                            </View>
-                            <View style={styles.categoriesList}>
-                                {popularCategories.map((category) => (
-                                    <TouchableOpacity
-                                        key={category.id}
-                                        style={styles.categoryItem}
-                                        onPress={() => handleCategoryPress(category.id)}
-                                        activeOpacity={0.8}
-                                    >
-                                        <View style={[styles.categoryIconContainer, { backgroundColor: category.color }]}>
-                                            <Ionicons name={category.icon} size={24} color={COLORS.white} />
-                                        </View>
-                                        <View style={styles.categoryContent}>
-                                            <Text style={styles.categoryText}>{category.name}</Text>
-                                            <Text style={styles.categoryCount}>{category.productCount} items</Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-
-                        {/* Quick Actions */}
-                        <View style={styles.quickActionsContainer}>
-                            <TouchableOpacity
-                                style={styles.quickAction}
-                                onPress={() => router.push('/product?filter=new-arrivals')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={[styles.quickActionIcon, { backgroundColor: '#ECFDF5' }]}>
-                                    <Ionicons name="sparkles" size={24} color={COLORS.success} />
-                                </View>
-                                <Text style={styles.quickActionText}>New Arrivals</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.quickAction}
-                                onPress={() => router.push('/product?filter=trending')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={[styles.quickActionIcon, { backgroundColor: '#FEE2E2' }]}>
-                                    <Ionicons name="trending-up" size={24} color={COLORS.error} />
-                                </View>
-                                <Text style={styles.quickActionText}>Trending</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.quickAction}
-                                onPress={() => router.push('/product')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={[styles.quickActionIcon, { backgroundColor: '#EFF6FF' }]}>
-                                    <Ionicons name="grid" size={24} color={COLORS.walmartBlue} />
-                                </View>
-                                <Text style={styles.quickActionText}>All Products</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.quickAction}
-                                onPress={() => router.push('/product?filter=sale')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={[styles.quickActionIcon, { backgroundColor: '#FEF3C7' }]}>
-                                    <Ionicons name="pricetag" size={24} color={COLORS.warning} />
-                                </View>
-                                <Text style={styles.quickActionText}>On Sale</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </ScrollView>
+                    </Animated.View>
                 )}
-            </Animated.View>
-
-            {/* Loading Overlay */}
-            {isLoading && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color={COLORS.walmartBlue} />
-                    <Text style={styles.loadingText}>Searching...</Text>
-                </View>
-            )}
-        </SafeAreaView>
+            </SafeAreaView>
+        </View>
     );
 }
 
-
-const styles = StyleSheet.create({
-    // Main Container
+const styles = StyleSheet.create( {
     container: {
         flex: 1,
-        backgroundColor: COLORS.lightGray,
+        backgroundColor: COLORS.white,
     },
-    contentContainer: {
-        flex: 1,
-    },
-
-    // Header - Enhanced Walmart Blue Design
-    header: {
+    headerContainer: {
         backgroundColor: COLORS.walmartBlue,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 3,
-            },
-        }),
+        paddingTop: 0,
+    },
+    safeAreaHeader: {
+        backgroundColor: COLORS.walmartBlue,
     },
     headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         gap: 12,
     },
     backButton: {
-        padding: 8,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        padding: 4,
     },
     searchContainer: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.white,
-        borderRadius: 28,
-        paddingHorizontal: 18,
-        paddingVertical: 12,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
+        borderRadius: 25,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        gap: 10,
     },
     searchInput: {
         flex: 1,
-        marginLeft: 12,
         fontSize: 16,
         color: COLORS.textPrimary,
-        fontWeight: '400',
-        lineHeight: 20,
-        ...Platform.select({
-            ios: {
-                fontFamily: 'System',
-            },
-            android: {
-                fontFamily: 'sans-serif',
-            },
-        }),
+    },
+    searchInputDisabled: {
+        color: COLORS.mediumGray,
     },
     clearButton: {
-        marginLeft: 8,
         padding: 4,
-        borderRadius: 12,
     },
-    aiToggleButton: {
-        padding: 10,
+    voiceButton: {
+        width: 40,
+        height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.1,
-                shadowRadius: 2,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     barcodeButton: {
-        padding: 10,
+        width: 40,
+        height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    aiToggleButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     cartButton: {
-        padding: 10,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        position: 'relative',
+        padding: 4,
     },
     cartIconContainer: {
         position: 'relative',
@@ -942,165 +1070,215 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: -8,
         right: -8,
-        backgroundColor: COLORS.walmartYellow,
-        borderRadius: 12,
-        minWidth: 24,
-        height: 24,
+        backgroundColor: COLORS.error,
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 6,
         borderWidth: 2,
-        borderColor: COLORS.walmartBlue,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.2,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 3,
-            },
-        }),
+        borderColor: COLORS.white,
     },
     cartBadgeText: {
-        color: COLORS.textPrimary,
+        color: COLORS.white,
         fontSize: 12,
-        fontWeight: '700',
+        fontWeight: 'bold',
     },
-
-    // Search Suggestions Overlay - Enhanced for AI
+    mainContent: {
+        flex: 1,
+        backgroundColor: COLORS.lightGray,
+    },
     suggestionsContainer: {
-        position: 'absolute',
-        top: 88,
-        left: 16,
-        right: 16,
         backgroundColor: COLORS.white,
-        borderRadius: 16,
-        zIndex: 1000,
-        maxHeight: 350,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.15,
-                shadowRadius: 16,
-            },
-            android: {
-                elevation: 8,
-            },
-        }),
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.borderColor,
+        maxHeight: 300,
     },
     suggestionsLoading: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 20,
-        paddingHorizontal: 16,
+        padding: 16,
+        gap: 12,
     },
     suggestionsLoadingText: {
-        marginLeft: 12,
         fontSize: 14,
         color: COLORS.textSecondary,
-        fontWeight: '500',
     },
     suggestionsList: {
-        borderRadius: 16,
-        maxHeight: 280,
+        paddingVertical: 8,
     },
     suggestionItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
         paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F3F4F6',
-    },
-    suggestionLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
+        paddingVertical: 12,
+        gap: 12,
     },
     suggestionText: {
-        marginLeft: 12,
+        flex: 1,
         fontSize: 16,
         color: COLORS.textPrimary,
-        fontWeight: '500',
+    },
+    contentContainer: {
         flex: 1,
     },
-    aiSuggestionText: {
-        color: COLORS.aiPurple,
+    noResultsContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 32,
+        gap: 16,
+    },
+    noResultsTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+        textAlign: 'center',
+    },
+    noResultsText: {
+        fontSize: 16,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        lineHeight: 24,
+    },
+    browseAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.walmartBlue,
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 25,
+        gap: 8,
+        marginTop: 16,
+    },
+    browseAllText: {
+        color: COLORS.white,
+        fontSize: 16,
         fontWeight: '600',
     },
-    suggestionRight: {
+    resultsContainer: {
+        flex: 1,
+        backgroundColor: COLORS.white,
+    },
+    resultsHeader: {
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.borderColor,
+    },
+    resultsCount: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    resultsGrid: {
+        padding: 16,
+    },
+    resultsRow: {
+        justifyContent: 'space-between',
+    },
+    productCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+        width: (screenWidth - 48) / 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    productImage: {
+        width: '100%',
+        height: 120,
+        borderRadius: 8,
+        marginBottom: 8,
+    },
+    productInfo: {
+        gap: 4,
+    },
+    productBrand: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        fontWeight: '500',
+    },
+    productName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        lineHeight: 18,
+    },
+    productRating: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    starsContainer: {
+        flexDirection: 'row',
+        gap: 1,
+    },
+    ratingText: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
+    },
+    priceContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
     },
-    aiSuggestionBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-        borderRadius: 12,
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderWidth: 1,
-        borderColor: 'rgba(16, 185, 129, 0.2)',
+    currentPrice: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
     },
-    aiSuggestionBadgeText: {
-        color: COLORS.aiGreen,
-        fontSize: 10,
-        fontWeight: '700',
-        marginLeft: 3,
-        letterSpacing: 0.5,
+    originalPrice: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        textDecorationLine: 'line-through',
     },
-    hotBadge: {
-        backgroundColor: '#FED7AA',
-        borderRadius: 8,
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderWidth: 1,
-        borderColor: '#FDBA74',
-    },
-    hotBadgeText: {
-        color: '#EA580C',
-        fontSize: 9,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-    },
-    aiPoweredFooter: {
+    addToCartButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        backgroundColor: 'rgba(16, 185, 129, 0.05)',
-        borderTopWidth: 1,
-        borderTopColor: '#F3F4F6',
-        borderBottomLeftRadius: 16,
-        borderBottomRightRadius: 16,
+        backgroundColor: COLORS.walmartBlue,
+        paddingVertical: 8,
+        borderRadius: 6,
+        gap: 4,
+        marginTop: 8,
     },
-    aiPoweredText: {
-        marginLeft: 6,
+    addToCartText: {
+        color: COLORS.white,
         fontSize: 12,
-        color: COLORS.aiGreen,
         fontWeight: '600',
-        letterSpacing: 0.3,
     },
-
-    // Scroll Container
+    outOfStockButton: {
+        backgroundColor: COLORS.mediumGray,
+        paddingVertical: 8,
+        borderRadius: 6,
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    outOfStockText: {
+        color: COLORS.white,
+        fontSize: 12,
+        fontWeight: '600',
+    },
     scrollContainer: {
         flex: 1,
-        backgroundColor: COLORS.lightGray,
     },
-
-    // AI Status Card - New Section
-    aiStatusCard: {
-        backgroundColor: 'rgba(139, 92, 246, 0.05)',
-        borderWidth: 1,
-        borderColor: 'rgba(139, 92, 246, 0.15)',
-        marginTop: 8,
+    scrollContent: {
+        padding: 16,
+        gap: 16,
+    },
+    sectionCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
     },
     aiStatusContent: {
         flexDirection: 'row',
@@ -1111,174 +1289,102 @@ const styles = StyleSheet.create({
     aiStatusLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        flex: 1,
+        gap: 12,
+    },
+    aiStatusTextContainer: {
+        gap: 2,
     },
     aiStatusTitle: {
-        marginLeft: 12,
         fontSize: 16,
-        fontWeight: '700',
+        fontWeight: 'bold',
         color: COLORS.textPrimary,
     },
+    aiStatusSubtitle: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
     aiToggle: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        minWidth: 50,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
         alignItems: 'center',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.1,
-                shadowRadius: 2,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
+        justifyContent: 'center',
     },
     aiToggleText: {
         color: COLORS.white,
         fontSize: 12,
-        fontWeight: '700',
-        letterSpacing: 0.5,
+        fontWeight: 'bold',
     },
     aiStatusDescription: {
         fontSize: 14,
         color: COLORS.textSecondary,
         lineHeight: 20,
-        fontStyle: 'italic',
-    },
-
-    // Section Cards - Enhanced Design
-    sectionCard: {
-        backgroundColor: COLORS.white,
-        marginHorizontal: 16,
-        marginTop: 16,
-        borderRadius: 16,
-        padding: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.08,
-                shadowRadius: 8,
-            },
-            android: {
-                elevation: 4,
-            },
-        }),
-    },
-    lastSection: {
-        marginBottom: 24,
     },
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 18,
+        marginBottom: 12,
+    },
+    sectionTitleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     sectionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
         color: COLORS.textPrimary,
-        fontWeight: '700',
-        fontSize: 22,
-        lineHeight: 28,
-        ...Platform.select({
-            ios: {
-                fontFamily: 'System',
-            },
-            android: {
-                fontFamily: 'sans-serif-medium',
-            },
-        }),
     },
     clearAllText: {
+        fontSize: 14,
         color: COLORS.walmartBlue,
-        fontSize: 16,
         fontWeight: '600',
     },
-
-    // Recent Searches - Enhanced Layout
     recentSearchesContainer: {
-        gap: 12,
+        gap: 8,
     },
     recentSearchItem: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.recentSearchGray,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.borderColor,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 2,
-            },
-            android: {
-                elevation: 1,
-            },
-        }),
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        gap: 8,
     },
     recentSearchText: {
-        marginLeft: 12,
+        flex: 1,
+        fontSize: 14,
         color: COLORS.textPrimary,
-        fontSize: 16,
-        fontWeight: '500',
-        lineHeight: 20,
     },
-
-    // Trending Tags - Enhanced Design
-    trendingContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
+    trendingScrollContainer: {
+        paddingRight: 16,
+        gap: 8,
     },
     trendingTag: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.lightBlue,
-        borderWidth: 1,
-        borderColor: '#BBDEFB',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 24,
-        ...Platform.select({
-            ios: {
-                shadowColor: COLORS.walmartBlue,
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        gap: 6,
+        marginRight: 8,
     },
     trendingTagText: {
-        marginLeft: 6,
-        color: COLORS.walmartBlue,
         fontSize: 14,
-        fontWeight: '600',
-        lineHeight: 18,
+        color: COLORS.walmartBlue,
+        fontWeight: '500',
     },
-
-    // Categories List - Enhanced Design
     categoriesList: {
-        gap: 8,
+        gap: 12,
     },
     categoryItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 14,
-        paddingHorizontal: 8,
-        borderRadius: 12,
-        backgroundColor: 'rgba(0,0,0,0.02)',
+        gap: 12,
+        paddingVertical: 8,
     },
     categoryIconContainer: {
         width: 48,
@@ -1286,387 +1392,80 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 16,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
     },
     categoryContent: {
         flex: 1,
+        gap: 2,
     },
     categoryText: {
-        color: COLORS.textPrimary,
-        fontSize: 17,
+        fontSize: 16,
         fontWeight: '600',
-        lineHeight: 22,
-        marginBottom: 2,
+        color: COLORS.textPrimary,
     },
     categoryCount: {
+        fontSize: 12,
         color: COLORS.textSecondary,
-        fontSize: 14,
-        fontWeight: '500',
-        lineHeight: 18,
     },
-
-    // Quick Actions - Enhanced Section
     quickActionsContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
+        marginTop: 8,
+    },
+    quickActionsRow: {
         justifyContent: 'space-between',
-        gap: 12,
-        marginHorizontal: 16,
-        marginTop: 16,
-        marginBottom: 32,
+        marginBottom: 16,
     },
     quickAction: {
-        width: '48%',
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        padding: 16,
         alignItems: 'center',
-        backgroundColor: '#F8FAFC',
-        borderRadius: 16,
-        paddingVertical: 20,
-        paddingHorizontal: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.05,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
+        gap: 8,
+        width: (screenWidth - 48) / 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
     },
     quickActionIcon: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 12,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 2,
-            },
-        }),
     },
     quickActionText: {
-        color: COLORS.textPrimary,
         fontSize: 14,
         fontWeight: '600',
+        color: COLORS.textPrimary,
         textAlign: 'center',
-        lineHeight: 18,
     },
-
-    // Search Results - Enhanced Grid
-    resultsContainer: {
-        flex: 1,
-        backgroundColor: COLORS.lightGray,
-    },
-    resultsHeader: {
-        backgroundColor: COLORS.white,
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.borderColor,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 2,
-            },
-            android: {
-                elevation: 1,
-            },
-        }),
-    },
-    resultsCount: {
-        fontSize: 16,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-        flex: 1,
-    },
-    aiResultsBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-        borderRadius: 12,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderWidth: 1,
-        borderColor: 'rgba(16, 185, 129, 0.2)',
-    },
-    aiResultsText: {
-        marginLeft: 4,
-        fontSize: 12,
-        color: COLORS.aiGreen,
-        fontWeight: '600',
-        letterSpacing: 0.3,
-    },
-    resultsGrid: {
-        padding: 16,
-        paddingBottom: 32,
-    },
-    resultsRow: {
-        justifyContent: 'space-between',
-    },
-
-    // Product Cards - Enhanced Design
-    productCard: {
-        backgroundColor: COLORS.white,
-        borderRadius: 16,
-        padding: 12,
-        marginBottom: 16,
-        width: '48%',
-        position: 'relative',
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)',
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 3 },
-                shadowOpacity: 0.12,
-                shadowRadius: 8,
-            },
-            android: {
-                elevation: 6,
-            },
-        }),
-    },
-    productBadge: {
-        position: 'absolute',
-        top: 12,
-        left: 12,
+    quickActionBadge: {
         backgroundColor: COLORS.error,
-        borderRadius: 10,
         paddingHorizontal: 8,
-        paddingVertical: 4,
-        zIndex: 10,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.2,
-                shadowRadius: 2,
-            },
-            android: {
-                elevation: 3,
-            },
-        }),
+        paddingVertical: 2,
+        borderRadius: 10,
     },
-    productBadgeText: {
+    quickActionBadgeText: {
         color: COLORS.white,
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: 'bold',
     },
-    productImage: {
-        width: '100%',
-        height: 140,
-        borderRadius: 12,
-        marginBottom: 12,
-        backgroundColor: '#F8FAFC',
-    },
-    productInfo: {
-        flex: 1,
-    },
-    productBrand: {
-        fontSize: 12,
-        color: COLORS.walmartBlue,
-        fontWeight: '600',
-        marginBottom: 4,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    productName: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-        lineHeight: 18,
-    },
-    productRating: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    starsContainer: {
-        flexDirection: 'row',
-        marginRight: 6,
-    },
-    ratingText: {
-        fontSize: 11,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
-    priceContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 6,
-    },
-    currentPrice: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.success,
-    },
-    originalPrice: {
-        fontSize: 12,
-        color: COLORS.mediumGray,
-        textDecorationLine: 'line-through',
-        marginLeft: 6,
-    },
-    shippingInfo: {
-        fontSize: 11,
-        color: COLORS.success,
-        fontWeight: '500',
-        marginBottom: 12,
-    },
-
-    // Action Buttons - Enhanced Design
-    addToCartButton: {
-        backgroundColor: COLORS.walmartBlue,
-        borderRadius: 10,
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        ...Platform.select({
-            ios: {
-                shadowColor: COLORS.walmartBlue,
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 4,
-            },
-        }),
-    },
-    addToCartText: {
-        color: COLORS.white,
-        fontWeight: '700',
-        fontSize: 12,
-        marginLeft: 4,
-    },
-    outOfStockButton: {
-        backgroundColor: COLORS.mediumGray,
-        borderRadius: 10,
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    outOfStockText: {
-        color: COLORS.white,
-        fontWeight: '600',
-        fontSize: 12,
-    },
-
-    // No Results State - Enhanced Design
-    noResultsContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 32,
-        backgroundColor: COLORS.white,
-        margin: 16,
-        borderRadius: 16,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.08,
-                shadowRadius: 8,
-            },
-            android: {
-                elevation: 4,
-            },
-        }),
-    },
-    noResultsTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginTop: 16,
-        marginBottom: 8,
-        textAlign: 'center',
-        ...Platform.select({
-            ios: {
-                fontFamily: 'System',
-            },
-            android: {
-                fontFamily: 'sans-serif-medium',
-            },
-        }),
-    },
-    noResultsText: {
-        fontSize: 16,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        marginBottom: 24,
-        lineHeight: 24,
-    },
-    browseAllButton: {
-        backgroundColor: COLORS.walmartBlue,
-        borderRadius: 12,
-        paddingHorizontal: 32,
-        paddingVertical: 16,
-        ...Platform.select({
-            ios: {
-                shadowColor: COLORS.walmartBlue,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-            },
-            android: {
-                elevation: 6,
-            },
-        }),
-    },
-    browseAllText: {
-        color: COLORS.white,
-        fontWeight: '700',
-        fontSize: 16,
-    },
-
-    // Loading Overlay - Enhanced Design
     loadingOverlay: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        backgroundColor: 'rgba(255,255,255,0.9)',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1000,
+    },
+    loadingContent: {
+        alignItems: 'center',
+        gap: 12,
     },
     loadingText: {
-        color: COLORS.textSecondary,
-        marginTop: 16,
         fontSize: 16,
-        fontWeight: '600',
+        color: COLORS.textSecondary,
     },
 });
-

@@ -20,20 +20,91 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import unified system - INTEGRATED
 import { useCartStore } from '../../store/slices/cartSlice';
-import {
-    ALL_PRODUCTS,
-    getAllFeaturedProducts,
-    getAllSaleProducts,
-    getAllTrendingProducts,
-    getProductsByCategory,
-    getRelatedProducts,
-    getRandomProducts,
-    CATEGORIES,
-    Product
-} from '../../constants/products';
-import { getProductImageBySize } from '../../assets/images/imageLoader';
-
+import { ALL_PRODUCTS, ALL_CATEGORIES } from '../../constants/products/data';
 const { width: screenWidth } = Dimensions.get('window');
+
+// Add these helper functions to replace the old imports
+const getAllFeaturedProducts = () => ALL_PRODUCTS.filter(product => product.featured === true);
+
+const getAllSaleProducts = () => ALL_PRODUCTS.filter(product =>
+    product.originalPrice && product.originalPrice > product.price
+);
+
+const getAllTrendingProducts = () => {
+    // Simulate trending by high rating and review count
+    return ALL_PRODUCTS
+        .filter(product => product.rating >= 4.0 && product.reviewCount >= 100)
+        .sort((a, b) => b.reviewCount - a.reviewCount);
+};
+
+const getProductsByCategory = (categorySlug: string) => {
+    return ALL_PRODUCTS.filter(product => product.category === categorySlug);
+};
+
+const getRelatedProducts = (productId: string, limit: number = 4) => {
+    const product = ALL_PRODUCTS.find(p => p.id === productId);
+    if (!product) return [];
+
+    return ALL_PRODUCTS
+        .filter(p => p.id !== productId && p.category === product.category)
+        .slice(0, limit);
+};
+
+const getRandomProducts = (limit: number = 8) => {
+    return ALL_PRODUCTS
+        .sort(() => 0.5 - Math.random())
+        .slice(0, limit);
+};
+
+const getProductImageBySize = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
+};
+
+// Create CATEGORIES from ALL_CATEGORIES
+const CATEGORIES = ALL_CATEGORIES.reduce((acc, category) => {
+    acc[category.slug] = {
+        name: category.name,
+        icon: category.icon,
+    };
+    return acc;
+}, {} as Record<string, { name: string; icon: string }>);
+
+// Product interface for your new structure
+interface Product {
+    id: string;
+    name: string;
+    brand: string;
+    price: number;
+    originalPrice?: number;
+    rating: number;
+    reviewCount: number;
+    category: string;
+    inStock: boolean;
+    description?: string;
+    badge?: string;
+    badgeColor?: string;
+    featured?: boolean;
+    shipping?: {
+        free: boolean;
+        option: string;
+    };
+    sku: string;
+    maxQuantity?: number;
+    minQuantity?: number;
+    status?: string;
+    storeId?: string;
+    storeName?: string;
+    delivery?: {
+        option: 'pickup' | 'delivery' | 'shipping';
+        freeShippingEligible: boolean;
+    };
+    image: string; // Direct URL from CSV data
+    primaryImage?: string; // For backward compatibility
+}
 
 // Enhanced Walmart colors
 const COLORS = {
@@ -329,7 +400,6 @@ export default function RecommendationsScreen() {
         router.push(`/product/${productId}`);
     }, []);
 
-    // Enhanced add to cart with real integration
     const handleAddToCart = useCallback(async (product: Product) => {
         setIsAddingToCart(prev => ({ ...prev, [product.id]: true }));
 
@@ -343,7 +413,7 @@ export default function RecommendationsScreen() {
                 quantity: 1,
                 maxQuantity: product.maxQuantity || 10,
                 minQuantity: product.minQuantity || 1,
-                image: product.primaryImage,
+                image: product.image, // Use direct image URL
                 category: product.category,
                 sku: product.sku,
                 status: product.status || 'available',
@@ -372,7 +442,6 @@ export default function RecommendationsScreen() {
             setIsAddingToCart(prev => ({ ...prev, [product.id]: false }));
         }
     }, [addItem]);
-
     // Toggle preference
     const togglePreference = useCallback((preferenceId: string) => {
         setPreferences(prev =>

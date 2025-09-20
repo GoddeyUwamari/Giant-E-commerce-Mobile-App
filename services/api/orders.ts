@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { API } from '@/config/constants';
+import { API } from '../../config/constants';
 
 // Types
 export interface Order {

@@ -22,22 +22,21 @@ declare module '@env' {
     export const FIREBASE_STORAGE_BUCKET: string;
     export const FIREBASE_MESSAGING_SENDER_ID: string;
     export const FIREBASE_APP_ID: string;
-    export const FIREBASE_MEASUREMENT_ID: string;
 
-    // Firebase Web Config
-    export const FIREBASE_WEB_API_KEY: string;
-    export const FIREBASE_WEB_AUTH_DOMAIN: string;
-    export const FIREBASE_WEB_PROJECT_ID: string;
-
-    // Stripe Configuration
+    // API Keys (client-safe)
+    export const ANTHROPIC_API_KEY: string;
     export const STRIPE_PUBLISHABLE_KEY: string;
-    export const STRIPE_MERCHANT_ID: string;
 
-    // Google Services
-    export const GOOGLE_MAPS_API_KEY: string;
+    // Google Services (separated by platform)
+    export const GOOGLE_MAPS_API_KEY_IOS: string;
+    export const GOOGLE_MAPS_API_KEY_ANDROID: string;
     export const GOOGLE_PLACES_API_KEY: string;
     export const GOOGLE_OAUTH_CLIENT_ID: string;
-    export const GOOGLE_OAUTH_CLIENT_SECRET: string;
+
+    // Google Sign-In Client IDs
+    export const GOOGLE_CLIENT_ID_WEB: string;
+    export const GOOGLE_CLIENT_ID_IOS: string;
+    export const GOOGLE_CLIENT_ID_ANDROID: string;
 
     // Apple Services
     export const APPLE_CLIENT_ID: string;
@@ -64,61 +63,28 @@ declare module '@env' {
     export const ENABLE_SOCIAL_LOGIN: string;
     export const ENABLE_PUSH_NOTIFICATIONS: string;
     export const ENABLE_LOCATION_SERVICES: string;
-    export const ENABLE_WALMART_PLUS: string;
     export const ENABLE_BARCODE_SCANNER: string;
     export const ENABLE_CAMERA_FEATURES: string;
     export const ENABLE_ANALYTICS: string;
     export const ENABLE_CRASH_REPORTING: string;
     export const ENABLE_PERFORMANCE_MONITORING: string;
 
-    // Security
-    export const JWT_SECRET: string;
-    export const ENCRYPTION_KEY: string;
-    export const HMAC_SECRET: string;
-
-    // External APIs
+    // External APIs (client-safe only)
     export const WALMART_API_KEY: string;
-    export const WALMART_API_SECRET: string;
     export const USPS_API_KEY: string;
     export const UPS_API_KEY: string;
     export const FEDEX_API_KEY: string;
-
-    // Database
-    export const DATABASE_URL: string;
-    export const REDIS_URL: string;
-
-    // AWS Services
-    export const AWS_ACCESS_KEY_ID: string;
-    export const AWS_SECRET_ACCESS_KEY: string;
-    export const AWS_REGION: string;
-    export const AWS_S3_BUCKET: string;
 
     // CDN & Assets
     export const CDN_BASE_URL: string;
     export const ASSETS_BASE_URL: string;
     export const IMAGE_BASE_URL: string;
 
-    // Email Service
-    export const SENDGRID_API_KEY: string;
-    export const MAILGUN_API_KEY: string;
-    export const SMTP_HOST: string;
-    export const SMTP_PORT: string;
-    export const SMTP_USER: string;
-    export const SMTP_PASS: string;
-
-    // SMS Service
-    export const TWILIO_ACCOUNT_SID: string;
-    export const TWILIO_AUTH_TOKEN: string;
-    export const TWILIO_PHONE_NUMBER: string;
-
-    // Monitoring & Logging
+    // Monitoring & Logging (client-safe)
     export const SENTRY_DSN: string;
     export const BUGSNAG_API_KEY: string;
-    export const DATADOG_API_KEY: string;
 
     // Development Tools
-    export const FLIPPER_ENABLED: string;
-    export const REACTOTRON_ENABLED: string;
     export const DEBUG_MODE: string;
     export const LOG_LEVEL: string;
 
@@ -134,7 +100,6 @@ declare module '@env' {
 
     // Payment Configuration
     export const PAYMENT_PROCESSING_FEE: string;
-    export const TAX_CALCULATION_SERVICE: string;
     export const CURRENCY: string;
     export const LOCALE: string;
 
@@ -150,4 +115,12 @@ declare module '@env' {
     // Expo Configuration
     export const EXPO_PROJECT_ID: string;
     export const EXPO_OWNER: string;
+
+    // REMOVED - These should NEVER be in client-side code:
+    // JWT_SECRET, ENCRYPTION_KEY, HMAC_SECRET
+    // WALMART_API_SECRET, GOOGLE_OAUTH_CLIENT_SECRET
+    // DATABASE_URL, REDIS_URL
+    // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+    // SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+    // TWILIO_AUTH_TOKEN (only SID and phone number are client-safe)
 }

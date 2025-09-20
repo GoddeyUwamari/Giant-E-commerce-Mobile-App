@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -9,6 +9,7 @@ import {
     Platform,
     Alert,
     StyleSheet,
+    ActivityIndicator,
 } from 'react-native';
 import { Link, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,8 +46,24 @@ interface LoginFormData {
 }
 
 export default function LoginScreen(): JSX.Element {
-    const { login, isLoading } = useAuth();
+    const {
+        login,
+        signInWithGoogle,
+        signInWithApple,
+        isGoogleSignInAvailable,
+        isAppleSignInAvailable,
+        isLoading
+    } = useAuth();
+
     const [showPassword, setShowPassword] = useState(false);
+    const [socialLoading, setSocialLoading] = useState({
+        google: false,
+        apple: false,
+    });
+    const [socialAvailability, setSocialAvailability] = useState({
+        google: false,
+        apple: false,
+    });
 
     const {
         control,
@@ -60,6 +77,27 @@ export default function LoginScreen(): JSX.Element {
         },
     });
 
+    // Check social sign-in availability on mount
+    useEffect(() => {
+        const checkAvailability = async () => {
+            try {
+                const [googleAvailable, appleAvailable] = await Promise.all([
+                    isGoogleSignInAvailable(),
+                    isAppleSignInAvailable(),
+                ]);
+
+                setSocialAvailability({
+                    google: googleAvailable,
+                    apple: appleAvailable,
+                });
+            } catch (error) {
+                console.warn('Error checking social sign-in availability:', error);
+            }
+        };
+
+        checkAvailability();
+    }, [isGoogleSignInAvailable, isAppleSignInAvailable]);
+
     const onSubmit = async (data: LoginFormData) => {
         try {
             await login({
@@ -72,17 +110,85 @@ export default function LoginScreen(): JSX.Element {
         }
     };
 
-    const handleGoogleSignIn = () => {
-        Alert.alert('Google Sign In', 'Google authentication coming soon!');
+    const handleGoogleSignIn = async () => {
+        if (!socialAvailability.google) {
+            Alert.alert('Google Sign-In', 'Google Sign-In is not available on this device.');
+            return;
+        }
+
+        try {
+            setSocialLoading(prev => ({ ...prev, google: true }));
+
+            const result = await signInWithGoogle();
+
+            if (!result.success) {
+                if (result.cancelled) {
+                    // User cancelled - no need to show error
+                    return;
+                }
+
+                Alert.alert(
+                    'Google Sign-In Failed',
+                    result.error || 'Failed to sign in with Google. Please try again.'
+                );
+            }
+            // Success case is handled by the auth hook (navigation)
+        } catch (error) {
+            console.error('Google sign-in error:', error);
+            Alert.alert(
+                'Google Sign-In Error',
+                error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
+            );
+        } finally {
+            setSocialLoading(prev => ({ ...prev, google: false }));
+        }
     };
 
-    const handleAppleSignIn = () => {
-        Alert.alert('Apple Sign In', 'Apple authentication coming soon!');
+    const handleAppleSignIn = async () => {
+        if (!socialAvailability.apple) {
+            Alert.alert('Apple Sign-In', 'Apple Sign-In is not available on this device.');
+            return;
+        }
+
+        try {
+            setSocialLoading(prev => ({ ...prev, apple: true }));
+
+            const result = await signInWithApple();
+
+            if (!result.success) {
+                if (result.cancelled) {
+                    // User cancelled - no need to show error
+                    return;
+                }
+
+                if (result.notSupported) {
+                    Alert.alert('Apple Sign-In', 'Apple Sign-In is not supported on this device.');
+                    return;
+                }
+
+                Alert.alert(
+                    'Apple Sign-In Failed',
+                    result.error || 'Failed to sign in with Apple. Please try again.'
+                );
+            }
+            // Success case is handled by the auth hook (navigation)
+        } catch (error) {
+            console.error('Apple sign-in error:', error);
+            Alert.alert(
+                'Apple Sign-In Error',
+                error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.'
+            );
+        } finally {
+            setSocialLoading(prev => ({ ...prev, apple: false }));
+        }
     };
 
     const handleBackPress = () => {
         router.back();
     };
+
+    // Check if any loading state is active
+    const isAnyLoading = isLoading || socialLoading.google || socialLoading.apple;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -92,6 +198,7 @@ export default function LoginScreen(): JSX.Element {
                     style={styles.backButton}
                     onPress={handleBackPress}
                     activeOpacity={0.7}
+                    disabled={isAnyLoading}
                 >
                     <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
                 </TouchableOpacity>
@@ -105,6 +212,7 @@ export default function LoginScreen(): JSX.Element {
                     style={styles.scrollContainer}
                     contentContainerStyle={styles.contentContainer}
                     showsVerticalScrollIndicator={false}
+                    scrollEnabled={!isAnyLoading}
                 >
                     {/* Header */}
                     <View style={styles.header}>
@@ -149,6 +257,7 @@ export default function LoginScreen(): JSX.Element {
                                             keyboardType="email-address"
                                             autoCapitalize="none"
                                             autoCorrect={false}
+                                            editable={!isAnyLoading}
                                         />
                                         <View style={styles.inputIcon}>
                                             <Ionicons name="mail-outline" size={20} color={COLORS.mediumGray} />
@@ -192,10 +301,12 @@ export default function LoginScreen(): JSX.Element {
                                             secureTextEntry={!showPassword}
                                             autoCapitalize="none"
                                             autoCorrect={false}
+                                            editable={!isAnyLoading}
                                         />
                                         <TouchableOpacity
                                             style={styles.passwordToggle}
                                             onPress={() => setShowPassword(!showPassword)}
+                                            disabled={isAnyLoading}
                                         >
                                             <Ionicons
                                                 name={showPassword ? 'eye-off' : 'eye'}
@@ -216,7 +327,10 @@ export default function LoginScreen(): JSX.Element {
                         {/* Forgot Password Link */}
                         <View style={styles.forgotPasswordContainer}>
                             <Link href="/(auth)/forgot-password" asChild>
-                                <TouchableOpacity style={styles.forgotPasswordButton}>
+                                <TouchableOpacity
+                                    style={styles.forgotPasswordButton}
+                                    disabled={isAnyLoading}
+                                >
                                     <Text style={styles.forgotPasswordText}>
                                         Forgot Password?
                                     </Text>
@@ -228,17 +342,24 @@ export default function LoginScreen(): JSX.Element {
                         <TouchableOpacity
                             style={[
                                 styles.signInButton,
-                                (isValid && !isLoading) ? styles.signInButtonActive : styles.signInButtonDisabled
+                                (isValid && !isAnyLoading) ? styles.signInButtonActive : styles.signInButtonDisabled
                             ]}
                             onPress={handleSubmit(onSubmit)}
-                            disabled={!isValid || isLoading}
+                            disabled={!isValid || isAnyLoading}
                         >
-                            <Text style={[
-                                styles.signInButtonText,
-                                (!isValid || isLoading) && styles.signInButtonTextDisabled
-                            ]}>
-                                {isLoading ? 'Signing In...' : 'Sign In'}
-                            </Text>
+                            {isLoading ? (
+                                <View style={styles.loadingContainer}>
+                                    <ActivityIndicator color={COLORS.white} size="small" />
+                                    <Text style={styles.signInButtonText}>Signing In...</Text>
+                                </View>
+                            ) : (
+                                <Text style={[
+                                    styles.signInButtonText,
+                                    (!isValid || isAnyLoading) && styles.signInButtonTextDisabled
+                                ]}>
+                                    Sign In
+                                </Text>
+                            )}
                         </TouchableOpacity>
 
                         {/* Divider */}
@@ -249,34 +370,70 @@ export default function LoginScreen(): JSX.Element {
                         </View>
 
                         {/* Social Login Buttons */}
-                        <TouchableOpacity
-                            style={styles.socialButton}
-                            onPress={handleGoogleSignIn}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="logo-google" size={20} color={COLORS.googleBlue} />
-                            <Text style={styles.socialButtonText}>
-                                Continue with Google
-                            </Text>
-                        </TouchableOpacity>
+                        {/* Google Sign-In Button */}
+                        {socialAvailability.google && (
+                            <TouchableOpacity
+                                style={[
+                                    styles.socialButton,
+                                    socialLoading.google && styles.socialButtonLoading
+                                ]}
+                                onPress={handleGoogleSignIn}
+                                activeOpacity={0.8}
+                                disabled={isAnyLoading}
+                            >
+                                {socialLoading.google ? (
+                                    <View style={styles.socialLoadingContainer}>
+                                        <ActivityIndicator color={COLORS.googleBlue} size="small" />
+                                        <Text style={styles.socialButtonText}>
+                                            Signing in with Google...
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <>
+                                        <Ionicons name="logo-google" size={20} color={COLORS.googleBlue} />
+                                        <Text style={styles.socialButtonText}>
+                                            Continue with Google
+                                        </Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        )}
 
-                        <TouchableOpacity
-                            style={styles.socialButton}
-                            onPress={handleAppleSignIn}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="logo-apple" size={20} color={COLORS.appleBlack} />
-                            <Text style={styles.socialButtonText}>
-                                Continue with Apple
-                            </Text>
-                        </TouchableOpacity>
+                        {/* Apple Sign-In Button */}
+                        {socialAvailability.apple && (
+                            <TouchableOpacity
+                                style={[
+                                    styles.socialButton,
+                                    socialLoading.apple && styles.socialButtonLoading
+                                ]}
+                                onPress={handleAppleSignIn}
+                                activeOpacity={0.8}
+                                disabled={isAnyLoading}
+                            >
+                                {socialLoading.apple ? (
+                                    <View style={styles.socialLoadingContainer}>
+                                        <ActivityIndicator color={COLORS.appleBlack} size="small" />
+                                        <Text style={styles.socialButtonText}>
+                                            Signing in with Apple...
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <>
+                                        <Ionicons name="logo-apple" size={20} color={COLORS.appleBlack} />
+                                        <Text style={styles.socialButtonText}>
+                                            Continue with Apple
+                                        </Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                     {/* Sign Up Link */}
                     <View style={styles.footerContainer}>
                         <Text style={styles.footerText}>New to Walmart? </Text>
                         <Link href="/(auth)/register" asChild>
-                            <TouchableOpacity>
+                            <TouchableOpacity disabled={isAnyLoading}>
                                 <Text style={styles.footerLink}>Create Account</Text>
                             </TouchableOpacity>
                         </Link>
@@ -443,6 +600,11 @@ const styles = StyleSheet.create({
     signInButtonTextDisabled: {
         color: COLORS.disabledText,
     },
+    loadingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
 
     // Divider
     dividerContainer: {
@@ -478,11 +640,19 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         elevation: 1,
     },
+    socialButtonLoading: {
+        opacity: 0.7,
+    },
     socialButtonText: {
         marginLeft: 12,
         color: COLORS.textPrimary,
         fontWeight: '500',
         fontSize: 16,
+    },
+    socialLoadingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
 
     // Footer

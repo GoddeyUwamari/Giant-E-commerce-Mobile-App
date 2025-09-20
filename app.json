@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "walmart-mobile",
+    "owner": "goddeyuwamari1234",
     "slug": "walmart-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +9,11 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "walmart-mobile",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "extra": {
       "FIREBASE_API_KEY": "$FIREBASE_API_KEY",
       "FIREBASE_AUTH_DOMAIN": "$FIREBASE_AUTH_DOMAIN",
@@ -18,7 +23,13 @@
       "FIREBASE_APP_ID": "$FIREBASE_APP_ID",
       "ANTHROPIC_API_KEY": "$ANTHROPIC_API_KEY",
       "STRIPE_PUBLISHABLE_KEY": "$STRIPE_PUBLISHABLE_KEY",
-      "API_BASE_URL": "$API_BASE_URL"
+      "API_BASE_URL": "$API_BASE_URL",
+      "GOOGLE_CLIENT_ID_IOS": "$GOOGLE_CLIENT_ID_IOS",
+      "GOOGLE_CLIENT_ID_ANDROID": "$GOOGLE_CLIENT_ID_ANDROID",
+      "GOOGLE_CLIENT_ID_WEB": "$GOOGLE_CLIENT_ID_WEB",
+      "eas": {
+        "projectId": "ecb07e86-95eb-4871-b557-126d73f29eff"
+      }
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -28,8 +39,24 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.walmartmobile.app",
+      "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleMapsApiKey": "$GOOGLE_MAPS_API_KEY_IOS"
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Walmart app uses the camera to scan barcodes, capture receipts, and take product photos for reviews and returns.",
+        "NSMicrophoneUsageDescription": "Walmart app uses the microphone for voice shopping commands and video product reviews.",
+        "NSPhotoLibraryUsageDescription": "Walmart app accesses your photo library to save receipt photos and product images.",
+        "NSPhotoLibraryAddUsageDescription": "Walmart app saves shopping-related photos and receipts to your photo library.",
+        "NSLocationWhenInUseUsageDescription": "Walmart app uses your location to find nearby stores, show local deals, and estimate delivery times.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Walmart app uses your location to find nearby stores and provide location-based shopping features.",
+        "NSCalendarsUsageDescription": "Walmart app accesses your calendar to schedule delivery appointments and set shopping reminders.",
+        "NSRemindersUsageDescription": "Walmart app can create reminders for your shopping lists and order deliveries.",
+        "NSContactsUsageDescription": "Walmart app accesses contacts to help you share shopping lists and send gifts to friends and family.",
+        "NSFaceIDUsageDescription": "Use Face ID to securely sign in to your Walmart account and authorize purchases.",
+        "NSSpeechRecognitionUsageDescription": "Walmart app uses speech recognition for voice shopping commands and product search.",
+        "NSMotionUsageDescription": "Walmart app uses motion detection for shake-to-clear shopping cart and gesture controls."
       }
     },
     "android": {
@@ -39,32 +66,72 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.walmartmobile.app",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "$GOOGLE_MAPS_API_KEY_ANDROID"
         }
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.VIBRATE",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.READ_CONTACTS",
+        "com.android.vending.BILLING",
+        "android.permission.ACCESS_MEDIA_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-camera",
-      "expo-barcode-scanner",
-      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Walmart app uses the camera to scan barcodes, capture receipts, and take product photos for reviews and returns.",
+          "microphonePermission": "Walmart app uses the microphone for voice shopping commands and video product reviews.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Walmart app scans barcodes and QR codes for quick product lookup, price comparison, and inventory management."
+        }
+      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "This app uses photos to upload product images.",
-          "cameraPermission": "This app uses camera to scan barcodes and take photos."
+          "photosPermission": "Walmart app accesses photos to upload product images, receipts, and return documentation.",
+          "cameraPermission": "Walmart app uses camera to scan barcodes, capture receipts, and take product photos."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Walmart app saves receipt photos, product images, and shopping-related content to your photo library.",
+          "savePhotosPermission": "Walmart app saves shopping receipts and product photos for your records.",
+          "isAccessMediaLocationEnabled": true
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "This app uses location to find nearby Walmart stores.",
-          "locationAlwaysPermission": "This app uses location to find nearby Walmart stores.",
-          "locationWhenInUsePermission": "This app uses location to find nearby Walmart stores.",
+          "locationAlwaysAndWhenInUsePermission": "Walmart app uses location to find nearby stores, show local deals, and estimate delivery times.",
+          "locationAlwaysPermission": "Walmart app uses location to find nearby stores and provide location-based shopping features.",
+          "locationWhenInUsePermission": "Walmart app uses location to find nearby stores, show local deals, and estimate delivery times.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
@@ -74,7 +141,6 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#0071CE",
-          "sounds": ["./assets/notification-sound.wav"],
           "iosDisplayInForeground": true,
           "androidMode": "default",
           "androidCollapsedTitle": "New notification"
@@ -83,9 +149,19 @@
       [
         "expo-calendar",
         {
-          "calendarPermission": "This app needs access to your calendar to save order confirmations and delivery reminders."
+          "calendarPermission": "Walmart app accesses your calendar to schedule delivery appointments, set shopping reminders, and track order dates."
         }
-      ]
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID or Touch ID to securely sign in to your Walmart account and authorize purchases."
+        }
+      ],
+      [
+        "expo-apple-authentication"
+      ],
+      "expo-web-browser"
     ]
   }
 }

@@ -17,8 +17,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCartStore } from '../../store/slices/cartSlice';
-import { getFeaturedCategories } from '../../constants/products';
-import { getImageById } from '../../assets/images/imageLoader'; // 🚀 NEW IMPORT
+import { ALL_CATEGORIES } from '../../constants/products/data';
 
 const { width } = Dimensions.get('window');
 
@@ -93,7 +92,7 @@ export default function CartModal(): JSX.Element {
     // 🚀 REMOVED: The problematic validation logic that was causing "invalidImages" warnings
     // The new smart image system handles all image IDs automatically
 
-    const featuredCategories = getFeaturedCategories().slice(0, 3);
+    const featuredCategories = ALL_CATEGORIES.slice(0, 3);
 
     const updateQuantity = async (id: string, newQuantity: number) => {
         if (newQuantity < 1) return;
@@ -155,16 +154,8 @@ export default function CartModal(): JSX.Element {
 
     // 🚀 NEW: Smart image source function using the enhanced image loader
     const getImageSource = (image: any) => {
-        try {
-            // Use the smart fallback system for any image ID
-            return getImageById(image, 'medium');
-        } catch (error) {
-            if (__DEV__) {
-                console.log(`📸 Using smart fallback for image: ${image}`);
-            }
-            // Ultimate fallback - this should never be reached with the new system
-            return getImageById(1, 'medium');
-        }
+        // Since your new products have direct image URLs
+        return { uri: image };
     };
 
     const getVariantText = (variant: any) => {

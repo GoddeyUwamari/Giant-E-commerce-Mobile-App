@@ -204,13 +204,13 @@ export default function RootLayout() {
                                 }}
                             />
 
-                            {/* Profile & Account */}
-                            <Stack.Screen
-                                name="profile/account"
-                                options={{
-                                    ...getHeaderStyle({ title: 'Account Settings' }),
-                                }}
-                            />
+                            {/*/!* Profile & Account *!/*/}
+                            {/*<Stack.Screen*/}
+                            {/*    name="profile/account"*/}
+                            {/*    options={{*/}
+                            {/*        ...getHeaderStyle({ title: 'Account Settings' }),*/}
+                            {/*    }}*/}
+                            {/*/>*/}
 
                             <Stack.Screen
                                 name="profile/addresses"

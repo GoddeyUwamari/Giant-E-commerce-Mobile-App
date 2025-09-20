@@ -7,129 +7,31 @@ import {
     Image,
     ActivityIndicator,
     RefreshControl,
-    StyleSheet,
     FlatList,
     TextInput,
+    StyleSheet,
     Alert,
     Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { format, isThisYear, isToday, isYesterday, subDays } from 'date-fns';
+import { format, isThisYear, isToday, isYesterday } from 'date-fns';
 
 // Import unified systems
-import { getImageById } from '../../assets/images/imageLoader';
 import { useCartStore } from '../../store/slices/cartSlice';
-import { ALL_PRODUCTS } from '../../constants/products';
+import { orderStorage } from '../../services/storage/asyncStorage';
+import OrderCreationService from '../../services/orderCreation/OrderCreationService';
+import { ALL_PRODUCTS } from '../../constants/products/data';
+import type { Order, OrderItem as APIOrderItem, OrderStatus } from '../../services/api/orders';
 
-// Enhanced interfaces with real data integration
-interface OrderItem {
-    id: string;
-    productId: string;
-    name: string;
-    imageId: string | number; // Changed from image URL to imageId
-    quantity: number;
-    price: number;
-    originalPrice?: number;
-    brand?: string;
-    sku?: string;
-    variant?: {
-        color?: string;
-        size?: string;
-        style?: string;
-    };
-}
-
-interface Order {
-    id: string;
-    orderNumber: string;
-    status: 'confirmed' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'returned';
-    items: OrderItem[];
-    total: number;
-    estimatedDelivery?: Date;
-    actualDelivery?: Date;
-    createdAt: Date;
-    trackingNumber?: string;
-    carrier?: string;
-}
-
-// Generate mock orders using real product data
-const generateMockOrders = (): Order[] => {
-    const sampleProducts = ALL_PRODUCTS.slice(0, 20); // Use first 20 products
-    const statuses: Order['status'][] = ['confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'];
-    const carriers = ['FedEx', 'UPS', 'USPS', 'DHL'];
-
-    return Array.from({ length: 8 }, (_, orderIndex) => {
-        const orderDate = new Date();
-        orderDate.setDate(orderDate.getDate() - (orderIndex * 2 + Math.floor(Math.random() * 3)));
-
-        const status = statuses[Math.floor(Math.random() * statuses.length)];
-        const itemCount = Math.floor(Math.random() * 3) + 1; // 1-3 items per order
-
-        // Select random products for this order
-        const orderProducts = sampleProducts
-            .sort(() => 0.5 - Math.random())
-            .slice(0, itemCount);
-
-        const items: OrderItem[] = orderProducts.map((product, itemIndex) => ({
-            id: `${orderIndex}_${itemIndex}`,
-            productId: product.id,
-            name: product.name,
-            imageId: product.id, // Use product ID for smart image loading
-            quantity: Math.floor(Math.random() * 2) + 1, // 1-2 quantity
-            price: product.price,
-            originalPrice: product.originalPrice,
-            brand: product.brand || 'Walmart',
-            sku: product.sku,
-            variant: {
-                color: product.variants?.colors?.[0]?.name,
-                size: product.variants?.sizes?.[0]?.name,
-            },
-        }));
-
-        const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const tax = subtotal * 0.08;
-        const shipping = subtotal > 35 ? 0 : 7.95;
-        const total = subtotal + tax + shipping;
-
-        let estimatedDelivery: Date | undefined;
-        let actualDelivery: Date | undefined;
-        let trackingNumber: string | undefined;
-        let carrier: string | undefined;
-
-        if (status === 'delivered') {
-            const delivery = new Date(orderDate);
-            delivery.setDate(delivery.getDate() + Math.floor(Math.random() * 5) + 2);
-            actualDelivery = delivery;
-        } else if (['shipped', 'out_for_delivery'].includes(status)) {
-            const estimated = new Date();
-            estimated.setDate(estimated.getDate() + Math.floor(Math.random() * 3) + 1);
-            estimatedDelivery = estimated;
-        } else if (['confirmed', 'processing'].includes(status)) {
-            const estimated = new Date();
-            estimated.setDate(estimated.getDate() + Math.floor(Math.random() * 5) + 3);
-            estimatedDelivery = estimated;
-        }
-
-        if (['shipped', 'out_for_delivery', 'delivered'].includes(status)) {
-            trackingNumber = `TRK${Math.floor(Math.random() * 1000000000)}`;
-            carrier = carriers[Math.floor(Math.random() * carriers.length)];
-        }
-
-        return {
-            id: `order_${orderIndex + 1}`,
-            orderNumber: `WM-2025-${String(orderIndex + 1).padStart(6, '0')}`,
-            status,
-            items,
-            total: Math.round(total * 100) / 100,
-            estimatedDelivery,
-            actualDelivery,
-            createdAt: orderDate,
-            trackingNumber,
-            carrier,
-        };
-    });
+// Helper function for product images
+const getImageById = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
 };
 
 export default function OrdersPage(): JSX.Element {
@@ -153,7 +55,7 @@ export default function OrdersPage(): JSX.Element {
         { id: 'delivered', label: 'Delivered', count: orders.filter(o => o.status === 'delivered').length },
         { id: 'cancelled', label: 'Cancelled', count: orders.filter(o => o.status === 'cancelled').length },
         { id: 'returned', label: 'Returned', count: orders.filter(o => o.status === 'returned').length },
-    ].filter(filter => filter.count > 0 || filter.id === 'all'); // Show all filters that have orders, plus "all"
+    ].filter(filter => filter.count > 0 || filter.id === 'all');
 
     useEffect(() => {
         loadOrders();
@@ -163,39 +65,56 @@ export default function OrdersPage(): JSX.Element {
         filterOrders();
     }, [orders, selectedFilter, searchQuery]);
 
-    // Enhanced order loading with product data integration
     const loadOrders = async () => {
         try {
             setIsLoading(true);
 
-            // TODO: Replace with actual API call
-            // const response = await fetch('/api/orders');
-            // if (!response.ok) throw new Error('Failed to fetch orders');
-            // const ordersData = await response.json();
+            let loadedOrders: Order[] = [];
 
-            // For now, use enhanced mock data
-            const mockOrders = generateMockOrders();
+            try {
+                // Try to get order history from your real order service
+                const orderHistory = await OrderCreationService.getOrderHistory();
+                if (orderHistory && orderHistory.length > 0) {
+                    loadedOrders = orderHistory;
+                }
+            } catch (orderServiceError) {
+                console.warn('Failed to load from OrderCreationService:', orderServiceError);
 
-            // Enhance orders with product data (for when real API data comes)
-            const enhancedOrders = mockOrders.map(order => ({
-                ...order,
-                items: order.items.map(item => {
-                    const productData = ALL_PRODUCTS.find(p => p.id === item.productId);
-                    return {
-                        ...item,
-                        // Ensure we have fallbacks for missing data
-                        name: item.name || productData?.name || 'Unknown Product',
-                        brand: item.brand || productData?.brand || 'Walmart',
-                        imageId: item.imageId || productData?.id || item.productId,
-                        sku: item.sku || productData?.sku || `SKU-${item.productId}`,
-                    };
-                })
-            }));
+                // Fallback: try to get from storage
+                try {
+                    const storedOrders = await orderStorage.getAllOrders();
+                    if (storedOrders && storedOrders.length > 0) {
+                        loadedOrders = storedOrders;
+                    }
+                } catch (storageError) {
+                    console.warn('Failed to load from storage:', storageError);
+                }
+            }
 
-            setOrders(enhancedOrders);
+            // If we have orders, enhance them with product data
+            if (loadedOrders.length > 0) {
+                const enhancedOrders = loadedOrders.map(order => ({
+                    ...order,
+                    items: order.items.map(item => {
+                        const productData = ALL_PRODUCTS.find(p => p.id === item.productId);
+                        return {
+                            ...item,
+                            // Ensure we have fallbacks for missing data
+                            name: item.name || productData?.name || 'Unknown Product',
+                            brand: item.brand || productData?.brand || 'Walmart',
+                            sku: item.sku || productData?.sku || `SKU-${item.productId}`,
+                        };
+                    })
+                }));
+                setOrders(enhancedOrders);
+            } else {
+                // No orders found
+                setOrders([]);
+            }
+
         } catch (error) {
             console.error('Error loading orders:', error);
-            Alert.alert('Error', 'Failed to load orders');
+            setOrders([]);
         } finally {
             setIsLoading(false);
         }
@@ -219,7 +138,7 @@ export default function OrdersPage(): JSX.Element {
         }
 
         // Sort by creation date (newest first)
-        filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        filtered.sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime());
 
         setFilteredOrders(filtered);
     };
@@ -231,37 +150,60 @@ export default function OrdersPage(): JSX.Element {
     };
 
     // Smart image loading function
-    const getOrderItemImage = (item: OrderItem) => {
+    const getOrderItemImage = (item: APIOrderItem) => {
         try {
-            return getImageById(item.imageId, 'small');
+            if (typeof item.image === 'string' && item.image.startsWith('http')) {
+                return { uri: item.image };
+            }
+
+            if (typeof item.image === 'object' && item.image?.uri) {
+                return item.image;
+            }
+
+            const product = ALL_PRODUCTS.find(p => p.id === item.productId);
+            if (product?.image) {
+                return { uri: product.image };
+            }
+
+            return getImageById(item.productId, 'small');
         } catch (error) {
             console.warn(`Failed to load image for item ${item.id}:`, error);
-            return getImageById(1, 'small'); // Ultimate fallback
+            return getImageById(1, 'small');
         }
     };
 
-    const getStatusBadgeStyle = (status: string) => {
+    const getStatusBadgeStyle = (status: OrderStatus) => {
         switch (status) {
+            case 'pending':
             case 'confirmed': return { backgroundColor: '#DBEAFE', color: '#2563EB' };
-            case 'processing': return { backgroundColor: '#FEF3C7', color: '#D97706' };
+            case 'processing':
+            case 'picking': return { backgroundColor: '#FEF3C7', color: '#D97706' };
+            case 'packed':
             case 'shipped': return { backgroundColor: '#EDE9FE', color: '#7C3AED' };
             case 'out_for_delivery': return { backgroundColor: '#FED7AA', color: '#EA580C' };
             case 'delivered': return { backgroundColor: '#D1FAE5', color: '#059669' };
-            case 'cancelled': return { backgroundColor: '#FEE2E2', color: '#DC2626' };
-            case 'returned': return { backgroundColor: '#F3F4F6', color: '#6B7280' };
+            case 'cancelled':
+            case 'failed': return { backgroundColor: '#FEE2E2', color: '#DC2626' };
+            case 'returned':
+            case 'refunded': return { backgroundColor: '#F3F4F6', color: '#6B7280' };
             default: return { backgroundColor: '#F3F4F6', color: '#6B7280' };
         }
     };
 
-    const getStatusIcon = (status: string) => {
+    const getStatusIcon = (status: OrderStatus) => {
         switch (status) {
+            case 'pending':
             case 'confirmed': return 'checkmark-circle';
-            case 'processing': return 'time';
+            case 'processing':
+            case 'picking': return 'time';
+            case 'packed': return 'cube';
             case 'shipped': return 'car';
             case 'out_for_delivery': return 'bicycle';
             case 'delivered': return 'home';
             case 'cancelled': return 'close-circle';
             case 'returned': return 'return-up-back';
+            case 'refunded': return 'card';
+            case 'failed': return 'alert-circle';
             default: return 'ellipse';
         }
     };
@@ -283,29 +225,31 @@ export default function OrdersPage(): JSX.Element {
     };
 
     const handleTrackOrder = (order: Order) => {
-        if (order.trackingNumber && order.carrier) {
+        if (order.tracking?.trackingNumber) {
+            const carrier = order.shipping.method.carrier?.toLowerCase() || '';
             let trackingUrl = '';
-            switch (order.carrier.toLowerCase()) {
+
+            switch (carrier) {
                 case 'fedex':
-                    trackingUrl = `https://www.fedex.com/fedextrack/?trknbr=${order.trackingNumber}`;
+                    trackingUrl = `https://www.fedex.com/fedextrack/?trknbr=${order.tracking.trackingNumber}`;
                     break;
                 case 'ups':
-                    trackingUrl = `https://www.ups.com/track?tracknum=${order.trackingNumber}`;
+                    trackingUrl = `https://www.ups.com/track?tracknum=${order.tracking.trackingNumber}`;
                     break;
                 case 'usps':
-                    trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${order.trackingNumber}`;
+                    trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${order.tracking.trackingNumber}`;
                     break;
                 default:
-                    Alert.alert('Tracking', `Tracking number: ${order.trackingNumber}`);
+                    Alert.alert('Tracking', `Tracking number: ${order.tracking.trackingNumber}`);
                     return;
             }
 
             Linking.openURL(trackingUrl).catch(() => {
                 Alert.alert(
                     'Track Package',
-                    `Tracking Number: ${order.trackingNumber}\nCarrier: ${order.carrier}\n\n(Link opening not available in simulator)`,
+                    `Tracking Number: ${order.tracking.trackingNumber}\nCarrier: ${carrier}\n\n(Link opening not available in simulator)`,
                     [
-                        { text: 'Copy Number', onPress: () => console.log('Copied:', order.trackingNumber) },
+                        { text: 'Copy Number', onPress: () => console.log('Copied:', order.tracking.trackingNumber) },
                         { text: 'OK', style: 'cancel' }
                     ]
                 );
@@ -330,23 +274,23 @@ export default function OrdersPage(): JSX.Element {
                                 await addItem({
                                     productId: item.productId,
                                     name: item.name,
-                                    brand: item.brand || 'Walmart',
+                                    brand: item.brand || item.seller.name,
                                     price: item.price,
                                     originalPrice: item.originalPrice,
                                     quantity: item.quantity,
                                     maxQuantity: productData?.maxQuantity || 10,
                                     minQuantity: productData?.minQuantity || 1,
-                                    image: item.imageId,
-                                    category: productData?.category || 'general',
-                                    sku: item.sku || `SKU-${item.productId}`,
-                                    status: productData?.status || 'available',
-                                    storeId: productData?.storeId || 'store_001',
-                                    storeName: productData?.storeName || 'Walmart Supercenter',
-                                    delivery: productData?.delivery || {
-                                        option: 'pickup' as const,
+                                    image: item.image,
+                                    category: item.category,
+                                    sku: item.sku,
+                                    status: 'available',
+                                    storeId: item.seller.id,
+                                    storeName: item.seller.name,
+                                    delivery: {
+                                        option: 'pickup',
                                         freeShippingEligible: true,
                                     },
-                                    variant: item.variant,
+                                    variant: item.variants || {},
                                 });
                             }
 
@@ -428,7 +372,7 @@ export default function OrdersPage(): JSX.Element {
                         {order.orderNumber}
                     </Text>
                     <Text style={styles.orderMeta}>
-                        Ordered {formatOrderDate(order.createdAt)} • ${order.total.toFixed(2)}
+                        Ordered {formatOrderDate(new Date(order.placedAt))} • ${order.summary.total.toFixed(2)}
                     </Text>
                 </View>
                 <View style={[styles.statusBadge, getStatusBadgeStyle(order.status)]}>
@@ -484,25 +428,25 @@ export default function OrdersPage(): JSX.Element {
             {/* Delivery Info */}
             {order.status !== 'cancelled' && (
                 <View style={styles.deliveryInfo}>
-                    {order.actualDelivery ? (
+                    {order.actualDeliveryDate ? (
                         <View style={styles.deliveryRow}>
                             <Ionicons name="checkmark-circle" size={16} color="#059669" />
                             <Text style={styles.deliveredText}>
-                                Delivered {formatOrderDate(order.actualDelivery)}
+                                Delivered {formatOrderDate(new Date(order.actualDeliveryDate))}
                             </Text>
                         </View>
-                    ) : order.estimatedDelivery ? (
+                    ) : order.expectedDeliveryDate ? (
                         <View style={styles.deliveryRow}>
                             <Ionicons name="time" size={16} color="#6B7280" />
                             <Text style={styles.expectedText}>
-                                Expected {formatOrderDate(order.estimatedDelivery)}
+                                Expected {formatOrderDate(new Date(order.expectedDeliveryDate))}
                             </Text>
                         </View>
                     ) : (
                         <View />
                     )}
 
-                    {order.trackingNumber && (
+                    {order.tracking?.trackingNumber && (
                         <TouchableOpacity
                             style={styles.trackButton}
                             onPress={() => handleTrackOrder(order)}
@@ -709,6 +653,7 @@ export default function OrdersPage(): JSX.Element {
         </SafeAreaView>
     );
 }
+
 
 const styles = StyleSheet.create({
     // Main Container Styles

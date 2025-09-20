@@ -22,17 +22,73 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import unified system - INTEGRATED
 import { useCartStore } from '../../store/slices/cartSlice';
-import {
-    getAllFeaturedProducts,
-    getAllSaleProducts,
-    getProductById,
-    getProductsByCategory,
-    CATEGORIES,
-    Product
-} from '../../constants/products';
-import { getProductImageBySize } from '../../assets/images/imageLoader';
+import { ALL_PRODUCTS, ALL_CATEGORIES } from '../../constants/products/data';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+// Add these helper functions to replace the old imports
+const getAllFeaturedProducts = () => ALL_PRODUCTS.filter(product => product.featured === true);
+
+const getAllSaleProducts = () => ALL_PRODUCTS.filter(product =>
+    product.originalPrice && product.originalPrice > product.price
+);
+
+const getProductById = (id: string) => {
+    return ALL_PRODUCTS.find(product => product.id === id);
+};
+
+const getProductsByCategory = (categorySlug: string) => {
+    return ALL_PRODUCTS.filter(product => product.category === categorySlug);
+};
+
+const getProductImageBySize = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
+};
+
+// Create CATEGORIES from ALL_CATEGORIES
+const CATEGORIES = ALL_CATEGORIES.reduce((acc, category) => {
+    acc[category.slug] = {
+        name: category.name,
+        icon: category.icon,
+    };
+    return acc;
+}, {} as Record<string, { name: string; icon: string }>);
+
+// Product type from your new structure
+interface Product {
+    id: string;
+    name: string;
+    brand: string;
+    price: number;
+    originalPrice?: number;
+    rating: number;
+    reviewCount: number;
+    category: string;
+    inStock: boolean;
+    description?: string;
+    badge?: string;
+    badgeColor?: string;
+    featured?: boolean;
+    shipping?: {
+        free: boolean;
+        option: string;
+    };
+    sku: string;
+    maxQuantity?: number;
+    minQuantity?: number;
+    status?: string;
+    storeId?: string;
+    storeName?: string;
+    delivery?: {
+        option: 'pickup' | 'delivery' | 'shipping';
+        freeShippingEligible: boolean;
+    };
+    image: string; // Direct URL from CSV data
+}
 
 // Enhanced Walmart colors - consistent with other screens
 const COLORS = {
@@ -107,7 +163,7 @@ interface WishList {
 const FAVORITES_KEY = 'user_favorites';
 const WISHLISTS_KEY = 'user_wishlists';
 
-// Enhanced filter options
+// Update the filterOptions array:
 const filterOptions = [
     { id: 'all', label: 'All Items', icon: 'grid-outline' },
     { id: 'today', label: 'Added Today', icon: 'today-outline' },
@@ -116,8 +172,8 @@ const filterOptions = [
     { id: 'on-sale', label: 'On Sale', icon: 'pricetag-outline' },
     { id: 'in-stock', label: 'In Stock', icon: 'checkmark-circle-outline' },
     { id: 'price-drops', label: 'Price Drops', icon: 'trending-down-outline' },
-    ...Object.entries(CATEGORIES).map(([key, category]) => ({
-        id: key,
+    ...ALL_CATEGORIES.map(category => ({
+        id: category.slug,
         label: category.name,
         icon: category.icon,
     })),

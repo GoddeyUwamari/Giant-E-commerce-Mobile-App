@@ -1,0 +1,168 @@
+{
+  "timestamp": "2025-09-05T21:12:45.455Z",
+  "summary": {
+    "totalProcessed": 58536,
+    "validProducts": 58053,
+    "curatedProducts": 900,
+    "invalidProducts": 483,
+    "successRate": "1.54%"
+  },
+  "fileStats": {
+    "All Electronics.csv": {
+      "totalRows": 9600,
+      "validProducts": 9530,
+      "qualityProducts": 4347
+    },
+    "All Appliances.csv": {
+      "totalRows": 9576,
+      "validProducts": 9485,
+      "qualityProducts": 2080
+    },
+    "All Home and Kitchen.csv": {
+      "totalRows": 1224,
+      "validProducts": 1220,
+      "qualityProducts": 699
+    },
+    "All Car and Motorbike Products.csv": {
+      "totalRows": 1272,
+      "validProducts": 1265,
+      "qualityProducts": 375
+    },
+    "All Exercise and Fitness.csv": {
+      "totalRows": 1176,
+      "validProducts": 1169,
+      "qualityProducts": 349
+    },
+    "All Grocery and Gourmet Foods.csv": {
+      "totalRows": 960,
+      "validProducts": 954,
+      "qualityProducts": 754
+    },
+    "Amazon Fashion.csv": {
+      "totalRows": 2352,
+      "validProducts": 2341,
+      "qualityProducts": 1156
+    },
+    "Beauty and Grooming.csv": {
+      "totalRows": 1920,
+      "validProducts": 1915,
+      "qualityProducts": 1163
+    },
+    "Baby Products.csv": {
+      "totalRows": 1056,
+      "validProducts": 1049,
+      "qualityProducts": 619
+    },
+    "All Pet Supplies.csv": {
+      "totalRows": 648,
+      "validProducts": 641,
+      "qualityProducts": 258
+    },
+    "All Video Games.csv": {
+      "totalRows": 0,
+      "validProducts": 0,
+      "qualityProducts": 0
+    },
+    "Bags and Luggage.csv": {
+      "totalRows": 19152,
+      "validProducts": 18999,
+      "qualityProducts": 4496
+    },
+    "Cameras.csv": {
+      "totalRows": 9600,
+      "validProducts": 9485,
+      "qualityProducts": 1485
+    },
+    "All Books.csv": {
+      "totalRows": 0,
+      "validProducts": 0,
+      "qualityProducts": 0
+    }
+  },
+  "categories": {
+    "electronics": {
+      "count": 120,
+      "limit": 120,
+      "averageRating": 4.307499999999999,
+      "averagePrice": 197.03633333333335
+    },
+    "appliances": {
+      "count": 80,
+      "limit": 80,
+      "averageRating": 4.145,
+      "averagePrice": 392.17262500000004
+    },
+    "home-kitchen": {
+      "count": 100,
+      "limit": 100,
+      "averageRating": 4.243,
+      "averagePrice": 284.8352
+    },
+    "automotive": {
+      "count": 60,
+      "limit": 60,
+      "averageRating": 4.236666666666667,
+      "averagePrice": 305.48383333333334
+    },
+    "sports-fitness": {
+      "count": 80,
+      "limit": 80,
+      "averageRating": 4.14625,
+      "averagePrice": 331.22562500000004
+    },
+    "grocery": {
+      "count": 90,
+      "limit": 90,
+      "averageRating": 4.286666666666667,
+      "averagePrice": 140.39077777777777
+    },
+    "fashion": {
+      "count": 100,
+      "limit": 100,
+      "averageRating": 4.201999999999999,
+      "averagePrice": 288.3398
+    },
+    "beauty-grooming": {
+      "count": 70,
+      "limit": 70,
+      "averageRating": 4.229999999999999,
+      "averagePrice": 235.00257142857143
+    },
+    "baby-products": {
+      "count": 60,
+      "limit": 60,
+      "averageRating": 4.290000000000003,
+      "averagePrice": 309.78316666666666
+    },
+    "pet-supplies": {
+      "count": 50,
+      "limit": 50,
+      "averageRating": 4.2,
+      "averagePrice": 317.06
+    },
+    "video-games": {
+      "count": 0,
+      "limit": 70,
+      "averageRating": 0,
+      "averagePrice": 0
+    },
+    "bags-luggage": {
+      "count": 50,
+      "limit": 50,
+      "averageRating": 4.166000000000001,
+      "averagePrice": 286.36440000000005
+    },
+    "cameras": {
+      "count": 40,
+      "limit": 40,
+      "averageRating": 4.297500000000001,
+      "averagePrice": 282.425
+    },
+    "books": {
+      "count": 0,
+      "limit": 30,
+      "averageRating": 0,
+      "averagePrice": 0
+    }
+  }
+}

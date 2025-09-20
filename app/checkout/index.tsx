@@ -20,11 +20,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 🚀 UPDATED: Import real data systems and payment form
 import { useCartStore } from '../../store/slices/cartSlice';
-import { getImageById } from '../../assets/images/imageLoader';
-import { getProductById } from '../../constants/products';
+import { ALL_PRODUCTS } from '../../constants/products/data';
 import PaymentForm from '../../components/forms/PaymentForm';
 
 const { width } = Dimensions.get('window');
+
+const getProductById = (id: string) => {
+    return ALL_PRODUCTS.find(product => product.id === id);
+};
 
 interface Address {
     id: string;
@@ -125,6 +128,9 @@ export default function CheckoutPage(): JSX.Element {
 
     // 🚀 NEW: Payment modal state
     const [showAddPaymentForm, setShowAddPaymentForm] = useState(false);
+
+    // 🚀 NEW: Development mode check
+    const isDevelopment = __DEV__ || process.env.NODE_ENV === 'development';
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(50)).current;
@@ -349,7 +355,7 @@ export default function CheckoutPage(): JSX.Element {
         }
     };
 
-    // 🚀 UPDATED: Enhanced checkout validation and payment intent preparation
+    // 🚀 UPDATED: Enhanced checkout validation with development mode support
     const handleProceedToPayment = async () => {
         // Clear any previous errors
         clearError();
@@ -361,7 +367,40 @@ export default function CheckoutPage(): JSX.Element {
             return;
         }
 
-        // 🚀 FIXED: Use modal instead of navigation for payment method
+        // 🚀 DEVELOPMENT MODE: Skip payment method validation in development
+        if (isDevelopment) {
+            console.log('🚀 Development mode: Skipping payment method validation');
+
+            // Still validate other critical items
+            const outOfStockItems = cartItems.filter(item =>
+                item.status === 'out_of_stock' ||
+                item.status === 'discontinued' ||
+                item.status === 'unavailable'
+            );
+
+            if (outOfStockItems.length > 0) {
+                Alert.alert(
+                    'Items Out of Stock',
+                    `${outOfStockItems.length} item(s) in your cart are out of stock. Please remove them to continue.`,
+                    [{ text: 'OK' }]
+                );
+                return;
+            }
+
+            if (cartItems.length === 0) {
+                Alert.alert('Error', 'Your cart is empty');
+                return;
+            }
+
+            // Save current address for payment screen (even without payment method)
+            await AsyncStorage.setItem('selected_shipping_address', JSON.stringify(selectedAddress));
+
+            // Navigate directly to payment page where mock payment methods are configured
+            router.push('/checkout/payment');
+            return;
+        }
+
+        // 🚀 PRODUCTION MODE: Full validation including payment methods
         if (!selectedPayment) {
             Alert.alert(
                 'Add Payment Method',
@@ -470,62 +509,41 @@ export default function CheckoutPage(): JSX.Element {
         }
     };
 
-    // 🚀 UPDATED: Enhanced image source handling using your image system
+    // Simplified image source handling for new data structure
     const getImageSource = (item: any) => {
         try {
-            // Priority 1: Try using productId with image loader
-            if (item.productId) {
-                try {
-                    return getImageById(item.productId, 'medium');
-                } catch (error) {
-                    console.log('Could not load image from productId:', item.productId);
-                }
+            // Priority 1: Use direct image URL from item
+            if (item.image && typeof item.image === 'string') {
+                return { uri: item.image };
             }
 
-            // Priority 2: Try to get product data and use its primary image
-            if (item.productId) {
-                try {
-                    const product = getProductById(item.productId);
-                    if (product && product.primaryImage) {
-                        return product.primaryImage;
-                    }
-                } catch (error) {
-                    console.log('Could not load product data:', item.productId);
-                }
-            }
-
-            // Priority 3: Handle existing image property from cart
-            if (item.image) {
-                // If it's already a require() object, return it
-                if (typeof item.image === 'object' && !item.image.uri) {
-                    return item.image;
-                }
-
-                // If it's a URI string, create URI object
-                if (typeof item.image === 'string') {
-                    if (item.image.startsWith('http') || item.image.startsWith('https')) {
-                        return { uri: item.image };
-                    }
-                }
-
+            // Priority 2: If image is already a URI object
+            if (item.image && typeof item.image === 'object' && item.image.uri) {
                 return item.image;
+            }
+
+            // Priority 3: Try to get product data and use its image
+            if (item.productId) {
+                const product = getProductById(item.productId);
+                if (product && product.image) {
+                    return { uri: product.image };
+                }
             }
 
             // Priority 4: Try using item ID as fallback
             if (item.id) {
-                try {
-                    return getImageById(item.id, 'medium');
-                } catch (error) {
-                    console.log('Could not load image from item ID:', item.id);
+                const product = getProductById(item.id);
+                if (product && product.image) {
+                    return { uri: product.image };
                 }
             }
 
-            // Final fallback: Use default image
-            return getImageById(1, 'medium');
+            // Final fallback: placeholder image
+            return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
 
         } catch (error) {
             console.error('Error in getImageSource:', error);
-            return getImageById(1, 'medium');
+            return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
         }
     };
 
@@ -854,7 +872,7 @@ export default function CheckoutPage(): JSX.Element {
                     {/* 🚀 UPDATED: Enhanced Delivery Information */}
                     <View style={styles.section}>
                         <View style={styles.deliveryInfoHeader}>
-                            <Ionicons name="truck-outline" size={20} color="#0071CE" />
+                            <Ionicons name="car-outline" size={20} color="#0071CE" />
                             <Text style={styles.deliveryInfoTitle}>Delivery Information</Text>
                         </View>
                         <View style={styles.deliveryInfoCard}>
@@ -2132,4 +2150,4 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         fontSize: 18,
     },
-});
+});     1

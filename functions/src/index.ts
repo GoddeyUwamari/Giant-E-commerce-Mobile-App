@@ -1,1227 +1,1429 @@
 /**
- * Walmart Mobile App - Firebase Functions
- * Complete Payment Processing System with Stripe Integration
- * IMPROVED VERSION with better error handling and validation
+ * Improved Product Availability Function
+ * Addresses security, validation, and performance concerns
  */
 
 import * as functions from "firebase-functions";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
-import Stripe from "stripe";
-export { sendPushNotification } from './notifications';
+import Anthropic from '@anthropic-ai/sdk';
 
-// Initialize Firebase Admin
-admin.initializeApp();
-const db = admin.firestore();
+// Rate limiting store (in production, use Redis or Firestore)
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
-// Get Stripe secret key from Firebase config
-const getStripeSecretKey = () => {
-    const secretKey = functions.config().stripe?.secret_key;
-    if (!secretKey) {
-        throw new Error('Stripe secret key not configured. Run: firebase functions:config:set stripe.secret_key="sk_test_..."');
-    }
-    return secretKey;
+// Cache for inventory data (in production, use Redis)
+const inventoryCache = new Map<string, { data: any; expiry: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+
+// Helper function to calculate distance
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 3959; // Earth's radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
 };
 
-// Initialize Stripe (will be done in each function to access secret)
-let stripe: Stripe;
 
-// Types matching your frontend
-interface CartItem {
-    productId: string;
+// Google Places API interfaces
+interface GooglePlaceResult {
+    place_id: string;
     name: string;
-    price: number;
-    quantity: number;
-    category: string;
-    weight?: number;
-    dimensions?: {
-        length: number;
-        width: number;
-        height: number;
+    vicinity: string;
+    geometry: {
+        location: {
+            lat: number;
+            lng: number;
+        };
     };
+    rating?: number;
+    user_ratings_total?: number;
+    opening_hours?: {
+        open_now: boolean;
+    };
+    business_status?: string;
+    types?: string[];
 }
 
-interface ShippingAddress {
-    line1: string;
-    line2?: string;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: string;
+interface GooglePlacesResponse {
+    results: GooglePlaceResult[];
+    status: string;
+    error_message?: string;
 }
 
-interface TaxCalculationRequest {
-    items: CartItem[];
-    shippingAddress: ShippingAddress;
-    shippingCost?: number;
-    exemptionId?: string;
+interface InventoryRequest {
+    productId: string;
+    storeIds: string[];
+    includeQuantity?: boolean; // Optional flag to include exact quantities
 }
 
-interface ShippingCalculationRequest {
-    items: CartItem[];
-    fromAddress?: ShippingAddress;
-    toAddress: ShippingAddress;
-    serviceTypes?: string[];
+interface InventoryResponse {
+    storeId: string;
+    productId: string;
+    inStock: boolean;
+    quantity?: number; // Only included if requested and user has permission
+    lastUpdated: string;
+    estimatedAvailability?: 'high' | 'medium' | 'low'; // Abstracted availability level
 }
 
-interface PaymentIntentRequest {
-    cartId: string;
-    items: CartItem[];
-    paymentMethodId?: string;
-    shippingAddress: ShippingAddress;
-    billingAddress?: ShippingAddress;
-    shippingMethodId: string;
-    promoCode?: string;
-    savePaymentMethod?: boolean;
-    metadata?: Record<string, any>;
+interface StoreRequest {
+    latitude?: number;
+    longitude?: number;
+    radius?: number;
+    limit?: number;
 }
 
-interface PromoCodeRequest {
-    code: string;
-    cartId: string;
-    items?: string[];
-}
-
-// Tax rates by state (production would use real tax service)
-const TAX_RATES: Record<string, number> = {
-    'AL': 0.04, 'AK': 0.00, 'AZ': 0.056, 'AR': 0.065, 'CA': 0.0875,
-    'CO': 0.029, 'CT': 0.0635, 'DE': 0.00, 'FL': 0.06, 'GA': 0.04,
-    'HI': 0.04, 'ID': 0.06, 'IL': 0.0625, 'IN': 0.07, 'IA': 0.06,
-    'KS': 0.065, 'KY': 0.06, 'LA': 0.0445, 'ME': 0.055, 'MD': 0.06,
-    'MA': 0.0625, 'MI': 0.06, 'MN': 0.06875, 'MS': 0.07, 'MO': 0.04225,
-    'MT': 0.00, 'NE': 0.055, 'NV': 0.0685, 'NH': 0.00, 'NJ': 0.06625,
-    'NM': 0.05125, 'NY': 0.08, 'NC': 0.0475, 'ND': 0.05, 'OH': 0.0575,
-    'OK': 0.045, 'OR': 0.00, 'PA': 0.06, 'RI': 0.07, 'SC': 0.06,
-    'SD': 0.045, 'TN': 0.07, 'TX': 0.0625, 'UT': 0.0485, 'VT': 0.06,
-    'VA': 0.053, 'WA': 0.065, 'WV': 0.06, 'WI': 0.05, 'WY': 0.04
-};
-
-// Mock promo codes (production would use database)
-const PROMO_CODES: Record<string, any> = {
-    'SAVE10': { type: 'percentage', value: 10, description: '10% off your order' },
-    'SAVE20': { type: 'percentage', value: 20, description: '20% off your order', minimumAmount: 50 },
-    'FREESHIP': { type: 'free_shipping', value: 0, description: 'Free shipping on your order' },
-    'WELCOME15': { type: 'percentage', value: 15, description: '15% off for new customers' },
-    'FIRSTORDER': { type: 'percentage', value: 15, description: '15% off your first order' },
-    'HOLIDAY25': { type: 'percentage', value: 25, description: '25% off holiday special', maximumDiscount: 50 },
-};
-
-// 🔧 IMPROVED: Better CORS configuration
-const setCorsHeaders = (response: any) => {
+// CORS configuration
+const setCorsHeaders = (response: functions.Response) => {
     response.set('Access-Control-Allow-Origin', '*');
-    response.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    response.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     response.set('Access-Control-Max-Age', '3600');
-    response.set('Access-Control-Allow-Credentials', 'false');
 };
 
-// 🔧 IMPROVED: Better Stripe initialization with error handling
-const initializeStripe = () => {
-    if (!stripe) {
-        try {
-            const secretKey = getStripeSecretKey();
-            stripe = new Stripe(secretKey, {
-                apiVersion: '2023-10-16',
-                typescript: true,
-            });
-            logger.info('Stripe initialized successfully');
-        } catch (error) {
-            logger.error('Failed to initialize Stripe:', error);
-            throw error;
-        }
+// Rate limiting helper
+const checkRateLimit = (clientId: string, limit: number = 100, windowMs: number = 60000): boolean => {
+    const now = Date.now();
+    const key = clientId;
+
+    const clientData = rateLimitStore.get(key);
+
+    if (!clientData || now > clientData.resetTime) {
+        rateLimitStore.set(key, { count: 1, resetTime: now + windowMs });
+        return true;
     }
-    return stripe;
+
+    if (clientData.count >= limit) {
+        return false;
+    }
+
+    clientData.count++;
+    return true;
 };
 
-// 🆕 NEW: Validation helpers
-const validateCartItems = (items: CartItem[]): string[] => {
+// Input validation
+const validateInventoryRequest = (body: any): { isValid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
-    if (!Array.isArray(items) || items.length === 0) {
-        errors.push('Items array is required and cannot be empty');
-        return errors;
+    if (!body) {
+        errors.push('Request body is required');
+        return { isValid: false, errors };
     }
 
-    items.forEach((item, index) => {
-        if (!item.productId) errors.push(`Item ${index}: productId is required`);
-        if (!item.name) errors.push(`Item ${index}: name is required`);
-        if (typeof item.price !== 'number' || item.price <= 0) {
-            errors.push(`Item ${index}: price must be a positive number`);
-        }
-        if (typeof item.quantity !== 'number' || item.quantity <= 0) {
-            errors.push(`Item ${index}: quantity must be a positive number`);
-        }
-    });
+    const { productId, storeIds } = body;
 
-    return errors;
+    // Validate productId
+    if (!productId || typeof productId !== 'string' || productId.trim().length === 0) {
+        errors.push('productId is required and must be a non-empty string');
+    } else if (productId.length > 50) {
+        errors.push('productId must be 50 characters or less');
+    } else if (!/^[a-zA-Z0-9_-]+$/.test(productId)) {
+        errors.push('productId contains invalid characters');
+    }
+
+    // Validate storeIds
+    if (!storeIds || !Array.isArray(storeIds)) {
+        errors.push('storeIds is required and must be an array');
+    } else if (storeIds.length === 0) {
+        errors.push('storeIds array cannot be empty');
+    } else if (storeIds.length > 20) {
+        errors.push('Maximum 20 stores can be queried at once');
+    } else {
+        // Validate each store ID
+        storeIds.forEach((storeId, index) => {
+            if (!storeId || typeof storeId !== 'string' || storeId.trim().length === 0) {
+                errors.push(`storeIds[${index}] must be a non-empty string`);
+            } else if (storeId.length > 20) {
+                errors.push(`storeIds[${index}] must be 20 characters or less`);
+            } else if (!/^[a-zA-Z0-9_-]+$/.test(storeId)) {
+                errors.push(`storeIds[${index}] contains invalid characters`);
+            }
+        });
+    }
+
+    return { isValid: errors.length === 0, errors };
 };
 
-const validateShippingAddress = (address: ShippingAddress): string[] => {
-    const errors: string[] = [];
-
-    if (!address) {
-        errors.push('Shipping address is required');
-        return errors;
-    }
-
-    if (!address.line1?.trim()) errors.push('Address line 1 is required');
-    if (!address.city?.trim()) errors.push('City is required');
-    if (!address.state?.trim()) errors.push('State is required');
-    if (!address.postalCode?.trim()) errors.push('Postal code is required');
-    if (!address.country?.trim()) errors.push('Country is required');
-
-    // Basic US postal code validation
-    if (address.country === 'US' && address.postalCode) {
-        const zipRegex = /^\d{5}(-\d{4})?$/;
-        if (!zipRegex.test(address.postalCode)) {
-            errors.push('Invalid US postal code format');
-        }
-    }
-
-    return errors;
-};
-
-// 1. TAX CALCULATION ENDPOINT - IMPROVED
-export const calculateTax = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const { items, shippingAddress, shippingCost = 0 }: TaxCalculationRequest = request.body;
-
-            // 🔧 IMPROVED: Better validation
-            const itemErrors = validateCartItems(items);
-            const addressErrors = validateShippingAddress(shippingAddress);
-
-            if (itemErrors.length > 0 || addressErrors.length > 0) {
-                response.status(400).json({
-                    error: 'Validation failed',
-                    details: [...itemErrors, ...addressErrors]
-                });
-                return;
-            }
-
-            // Calculate subtotal
-            const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-            // Get tax rate for state
-            const taxRate = TAX_RATES[shippingAddress.state.toUpperCase()] || 0.08; // Default 8%
-
-            // Calculate tax amount (including shipping tax in some states)
-            const taxableAmount = subtotal + (shippingCost * 0.5); // 50% of shipping taxable
-            const taxAmount = taxableAmount * taxRate;
-
-            const result = {
-                subtotal: Math.round(subtotal * 100) / 100,
-                taxAmount: Math.round(taxAmount * 100) / 100,
-                taxRate,
-                breakdown: [{
-                    type: 'sales',
-                    jurisdiction: shippingAddress.state,
-                    rate: taxRate,
-                    amount: Math.round(taxAmount * 100) / 100,
-                    taxableAmount: Math.round(taxableAmount * 100) / 100,
-                }],
-                exemptions: [],
-                total: Math.round((subtotal + taxAmount) * 100) / 100,
-            };
-
-            logger.info('Tax calculation completed', {
-                state: shippingAddress.state,
-                subtotal: result.subtotal,
-                taxAmount: result.taxAmount
-            });
-
-            response.json(result);
-        } catch (error) {
-            logger.error('Tax calculation error:', error);
-            response.status(500).json({
-                error: 'Tax calculation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// 2. SHIPPING CALCULATION ENDPOINT - IMPROVED
-export const calculateShipping = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const { items, toAddress, serviceTypes }: ShippingCalculationRequest = request.body;
-
-            // 🔧 IMPROVED: Better validation
-            const itemErrors = validateCartItems(items);
-            const addressErrors = validateShippingAddress(toAddress);
-
-            if (itemErrors.length > 0 || addressErrors.length > 0) {
-                response.status(400).json({
-                    error: 'Validation failed',
-                    details: [...itemErrors, ...addressErrors]
-                });
-                return;
-            }
-
-            // Calculate total weight and value
-            const totalWeight = items.reduce((sum, item) =>
-                sum + ((item.weight || 1) * item.quantity), 0
-            );
-            const totalValue = items.reduce((sum, item) =>
-                sum + (item.price * item.quantity), 0
-            );
-
-            // Define shipping methods with dynamic pricing
-            const methods = [
-                {
-                    id: 'standard',
-                    name: 'Standard Delivery',
-                    description: '3-5 business days',
-                    carrier: 'USPS',
-                    serviceType: 'standard',
-                    cost: Math.round((totalValue >= 35 ? 0 : Math.max(5.99, totalWeight * 0.5)) * 100) / 100,
-                    estimatedDays: '3-5',
-                    isAvailable: true,
-                    features: ['Tracking included'],
-                },
-                {
-                    id: 'expedited',
-                    name: 'Express Delivery',
-                    description: '1-2 business days',
-                    carrier: 'FedEx',
-                    serviceType: 'expedited',
-                    cost: Math.round((totalValue >= 35 ? 9.99 : Math.max(15.99, totalWeight * 1.2)) * 100) / 100,
-                    estimatedDays: '1-2',
-                    isAvailable: true,
-                    features: ['Tracking included', 'Signature required'],
-                },
-                {
-                    id: 'overnight',
-                    name: 'Overnight Delivery',
-                    description: 'Next business day',
-                    carrier: 'FedEx',
-                    serviceType: 'overnight',
-                    cost: Math.round(Math.max(24.99, totalWeight * 2.0) * 100) / 100,
-                    estimatedDays: '1',
-                    isAvailable: totalValue >= 25,
-                    features: ['Tracking included', 'Signature required', 'Insurance included'],
-                },
-                {
-                    id: 'same_day',
-                    name: 'Same Day Delivery',
-                    description: 'Today by 9 PM',
-                    carrier: 'Local Delivery',
-                    serviceType: 'same_day',
-                    cost: 12.99,
-                    estimatedDays: '0',
-                    isAvailable: ['CA', 'NY', 'TX', 'FL'].includes(toAddress.state.toUpperCase()),
-                    features: ['Real-time tracking', 'Contact delivery person'],
-                },
-            ];
-
-            // Filter by requested service types and availability
-            const availableMethods = serviceTypes
-                ? methods.filter(m => serviceTypes.includes(m.serviceType) && m.isAvailable)
-                : methods.filter(m => m.isAvailable);
-
-            const result = {
-                methods: availableMethods,
-                freeShippingThreshold: 35,
-            };
-
-            logger.info('Shipping calculation completed', {
-                itemCount: items.length,
-                totalWeight,
-                totalValue,
-                state: toAddress.state,
-                availableMethodsCount: availableMethods.length
-            });
-
-            response.json(result);
-        } catch (error) {
-            logger.error('Shipping calculation error:', error);
-            response.status(500).json({
-                error: 'Shipping calculation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// 3. PROMO CODE VALIDATION ENDPOINT - IMPROVED
-export const validatePromoCode = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const { code, cartId, items = [] }: PromoCodeRequest = request.body;
-
-            if (!code?.trim() || !cartId?.trim()) {
-                response.status(400).json({
-                    error: 'Missing required fields: code and cartId are required'
-                });
-                return;
-            }
-
-            const upperCode = code.toUpperCase().trim();
-            const promoData = PROMO_CODES[upperCode];
-
-            if (!promoData) {
-                response.json({
-                    isValid: false,
-                    error: 'Invalid promo code',
-                });
-                return;
-            }
-
-            // Check if promo code has been used (simplified check)
-            try {
-                const usageDoc = await db.collection('promo_usage').doc(`${cartId}_${upperCode}`).get();
-                if (usageDoc.exists) {
-                    response.json({
-                        isValid: false,
-                        error: 'Promo code already used',
-                    });
-                    return;
-                }
-            } catch (firestoreError) {
-                logger.warn('Failed to check promo usage, allowing usage:', firestoreError);
-            }
-
-            const result = {
-                isValid: true,
-                promoCode: {
-                    id: `promo_${upperCode}`,
-                    code: upperCode,
-                    title: `${upperCode} Discount`,
-                    description: promoData.description,
-                    type: promoData.type,
-                    value: promoData.value,
-                    minimumAmount: promoData.minimumAmount,
-                    maximumDiscount: promoData.maximumDiscount,
-                    usageLimit: 1,
-                    usageCount: 0,
-                    isActive: true,
-                    metadata: {},
-                },
-                applicableItems: items,
-                estimatedDiscount: promoData.type === 'percentage' ?
-                    (promoData.value) : promoData.value, // Fixed calculation
-            };
-
-            logger.info('Promo code validated', { code: upperCode, isValid: true });
-            response.json(result);
-        } catch (error) {
-            logger.error('Promo validation error:', error);
-            response.status(500).json({
-                error: 'Promo validation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// 4. CREATE PAYMENT INTENT ENDPOINT - IMPROVED
-export const createPaymentIntent = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const stripe = initializeStripe();
-            const {
-                cartId,
-                items = [],
-                shippingAddress,
-                shippingMethodId,
-                promoCode,
-                metadata = {}
-            }: PaymentIntentRequest = request.body;
-
-            // 🔧 IMPROVED: Comprehensive validation
-            if (!cartId?.trim()) {
-                response.status(400).json({ error: 'cartId is required' });
-                return;
-            }
-
-            const itemErrors = validateCartItems(items);
-            const addressErrors = validateShippingAddress(shippingAddress);
-
-            if (itemErrors.length > 0 || addressErrors.length > 0) {
-                response.status(400).json({
-                    error: 'Validation failed',
-                    details: [...itemErrors, ...addressErrors]
-                });
-                return;
-            }
-
-            if (!shippingMethodId?.trim()) {
-                response.status(400).json({ error: 'shippingMethodId is required' });
-                return;
-            }
-
-            // Calculate amounts
-            const subtotal = items.reduce((sum: number, item: CartItem) =>
-                sum + (item.price * item.quantity), 0
-            );
-
-            // Apply promo code discount if provided
-            let discount = 0;
-            if (promoCode) {
-                const upperPromoCode = promoCode.toUpperCase().trim();
-                const promoData = PROMO_CODES[upperPromoCode];
-                if (promoData) {
-                    if (promoData.type === 'percentage') {
-                        discount = subtotal * (promoData.value / 100);
-                        if (promoData.maximumDiscount) {
-                            discount = Math.min(discount, promoData.maximumDiscount);
-                        }
-                    } else if (promoData.type === 'fixed') {
-                        discount = promoData.value;
-                    }
-                }
-            }
-
-            // Calculate tax on discounted amount
-            const taxableAmount = subtotal - discount;
-            const taxRate = TAX_RATES[shippingAddress.state.toUpperCase()] || 0.08;
-            const tax = Math.round(taxableAmount * taxRate * 100) / 100;
-
-            // Calculate shipping
-            let shipping = 0;
-            if (shippingMethodId !== 'pickup') {
-                const freeShippingThreshold = 35;
-                const effectiveSubtotal = subtotal - discount;
-
-                switch (shippingMethodId) {
-                    case 'standard':
-                        shipping = effectiveSubtotal >= freeShippingThreshold ? 0 : 5.99;
-                        break;
-                    case 'expedited':
-                        shipping = effectiveSubtotal >= freeShippingThreshold ? 9.99 : 15.99;
-                        break;
-                    case 'overnight':
-                        shipping = 24.99;
-                        break;
-                    case 'same_day':
-                        shipping = 12.99;
-                        break;
-                    default:
-                        shipping = effectiveSubtotal >= freeShippingThreshold ? 0 : 5.99;
-                }
-
-                // Free shipping promo
-                if (promoCode && PROMO_CODES[promoCode.toUpperCase()]?.type === 'free_shipping') {
-                    shipping = 0;
-                }
-            }
-
-            const total = Math.round((subtotal - discount + tax + shipping) * 100) / 100;
-            const amountInCents = Math.round(total * 100);
-
-            // 🔧 IMPROVED: Better amount validation
-            if (amountInCents < 50) {
-                response.status(400).json({
-                    error: 'Order total must be at least $0.50',
-                    currentTotal: total
-                });
-                return;
-            }
-
-            if (amountInCents > 99999999) { // Stripe limit
-                response.status(400).json({
-                    error: 'Order total exceeds maximum allowed amount',
-                    currentTotal: total
-                });
-                return;
-            }
-
-            // Create Stripe Payment Intent
-            const paymentIntent = await stripe.paymentIntents.create({
-                amount: amountInCents,
-                currency: 'usd',
-                automatic_payment_methods: {
-                    enabled: true,
-                },
-                shipping: {
-                    address: {
-                        line1: shippingAddress.line1,
-                        line2: shippingAddress.line2 || undefined,
-                        city: shippingAddress.city,
-                        state: shippingAddress.state,
-                        postal_code: shippingAddress.postalCode,
-                        country: shippingAddress.country.toUpperCase(),
-                    },
-                    name: 'Customer',
-                },
-                metadata: {
-                    cartId,
-                    shippingMethodId,
-                    itemCount: items.length.toString(),
-                    promoCode: promoCode || '',
-                    ...metadata,
-                },
-            });
-
-            // Store in Firestore with better error handling
-            try {
-                await db.collection('payment_intents').doc(paymentIntent.id).set({
-                    cartId,
-                    amount: total,
-                    currency: 'usd',
-                    status: paymentIntent.status,
-                    breakdown: {
-                        subtotal: Math.round(subtotal * 100) / 100,
-                        tax: Math.round(tax * 100) / 100,
-                        shipping: Math.round(shipping * 100) / 100,
-                        discount: Math.round(discount * 100) / 100,
-                        fees: [],
-                        total: Math.round(total * 100) / 100,
-                    },
-                    shippingAddress,
-                    shippingMethodId,
-                    promoCode: promoCode || null,
-                    items: items,
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-            } catch (firestoreError) {
-                logger.warn('Failed to store payment intent in Firestore:', firestoreError);
-                // Don't fail the request, just log the warning
-            }
-
-            const result = {
-                id: paymentIntent.id,
-                clientSecret: paymentIntent.client_secret,
-                amount: total,
-                currency: 'usd',
-                status: paymentIntent.status,
-                customerId: paymentIntent.customer as string || '',
-                metadata: paymentIntent.metadata,
-                breakdown: {
-                    subtotal: Math.round(subtotal * 100) / 100,
-                    tax: Math.round(tax * 100) / 100,
-                    shipping: Math.round(shipping * 100) / 100,
-                    discount: Math.round(discount * 100) / 100,
-                    fees: [],
-                    total: Math.round(total * 100) / 100,
-                },
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-            };
-
-            logger.info('Payment intent created successfully', {
-                paymentIntentId: paymentIntent.id,
-                amount: total,
-                cartId,
-                itemCount: items.length,
-                hasPromoCode: !!promoCode
-            });
-
-            response.json(result);
-        } catch (error) {
-            logger.error('Payment intent creation error:', error);
-            response.status(500).json({
-                error: 'Payment intent creation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// 5. CREATE SETUP INTENT ENDPOINT - IMPROVED
-export const createSetupIntent = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const stripe = initializeStripe();
-
-            const setupIntent = await stripe.setupIntents.create({
-                automatic_payment_methods: {
-                    enabled: true,
-                },
-                usage: 'off_session',
-            });
-
-            const result = {
-                id: setupIntent.id,
-                clientSecret: setupIntent.client_secret,
-                status: setupIntent.status,
-            };
-
-            logger.info('Setup intent created', { setupIntentId: setupIntent.id });
-            response.json(result);
-        } catch (error) {
-            logger.error('Setup intent creation error:', error);
-            response.status(500).json({
-                error: 'Setup intent creation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// 6. CONFIRM PAYMENT ENDPOINT - IMPROVED
-export const confirmPayment = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const stripe = initializeStripe();
-            const { paymentIntentId, paymentMethodId } = request.body;
-
-            if (!paymentIntentId?.trim()) {
-                response.status(400).json({ error: 'paymentIntentId is required' });
-                return;
-            }
-
-            // First, retrieve the payment intent to check its current status
-            const currentPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-            if (currentPaymentIntent.status === 'succeeded') {
-                // Payment already succeeded, return current state
-                const result = {
-                    id: currentPaymentIntent.id,
-                    status: currentPaymentIntent.status,
-                    amount: currentPaymentIntent.amount / 100,
-                    currency: currentPaymentIntent.currency,
-                    charges: [],
-                    createdAt: new Date(currentPaymentIntent.created * 1000).toISOString(),
-                };
-
-                response.json(result);
-                return;
-            }
-
-            // Confirm the payment intent if it needs confirmation
-            let paymentIntent;
-            if (currentPaymentIntent.status === 'requires_confirmation') {
-                paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
-                    payment_method: paymentMethodId,
-                    return_url: 'https://your-app.com/return',
-                });
-            } else {
-                paymentIntent = currentPaymentIntent;
-            }
-
-            // Update payment intent in Firestore
-            try {
-                await db.collection('payment_intents').doc(paymentIntentId).update({
-                    status: paymentIntent.status,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-            } catch (firestoreError) {
-                logger.warn('Failed to update payment intent in Firestore:', firestoreError);
-            }
-
-            // Fetch charges if payment succeeded
-            let charges: any[] = [];
-            if (paymentIntent.status === 'succeeded') {
-                try {
-                    const chargesList = await stripe.charges.list({
-                        payment_intent: paymentIntentId,
-                        limit: 10,
-                    });
-
-                    charges = chargesList.data.map(charge => ({
-                        id: charge.id,
-                        amount: charge.amount / 100,
-                        status: charge.status,
-                        receiptUrl: charge.receipt_url,
-                        createdAt: new Date(charge.created * 1000).toISOString(),
-                    }));
-                } catch (chargeError) {
-                    logger.warn('Could not fetch charges:', chargeError);
-                }
-            }
-
-            const result = {
-                id: paymentIntent.id,
-                status: paymentIntent.status,
-                amount: paymentIntent.amount / 100,
-                currency: paymentIntent.currency,
-                charges,
-                createdAt: new Date(paymentIntent.created * 1000).toISOString(),
-            };
-
-            logger.info('Payment confirmation processed', {
-                paymentIntentId,
-                status: paymentIntent.status,
-                chargesCount: charges.length
-            });
-
-            response.json(result);
-        } catch (error) {
-            logger.error('Payment confirmation error:', error);
-            response.status(500).json({
-                error: 'Payment confirmation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// Continue with the rest of your functions (stripeWebhook, createRefund, healthCheck, etc.)
-// They're already good as they are, just keeping them for completeness...
-
-// 7. STRIPE WEBHOOK HANDLER
-export const stripeWebhook = functions.https.onRequest(
-    async (request, response) => {
-        try {
-            const stripe = initializeStripe();
-            const sig = request.headers['stripe-signature'] as string;
-            const endpointSecret = functions.config().stripe?.webhook_secret || 'whsec_your_webhook_secret';
-
-            let event;
-            try {
-                event = stripe.webhooks.constructEvent(request.rawBody, sig, endpointSecret);
-            } catch (err) {
-                logger.error('Webhook signature verification failed:', err);
-                response.status(400).send('Webhook signature verification failed');
-                return;
-            }
-
-            // Handle the event
-            switch (event.type) {
-                case 'payment_intent.succeeded':
-                    const paymentIntent = event.data.object as Stripe.PaymentIntent;
-
-                    try {
-                        // Update order status in Firestore
-                        await db.collection('orders').add({
-                            paymentIntentId: paymentIntent.id,
-                            amount: paymentIntent.amount / 100,
-                            currency: paymentIntent.currency,
-                            status: 'processing',
-                            cartId: paymentIntent.metadata.cartId,
-                            shippingMethodId: paymentIntent.metadata.shippingMethodId,
-                            itemCount: paymentIntent.metadata.itemCount,
-                            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                        });
-
-                        // Mark promo code as used if present
-                        if (paymentIntent.metadata.promoCode) {
-                            await db.collection('promo_usage').doc(`${paymentIntent.metadata.cartId}_${paymentIntent.metadata.promoCode}`).set({
-                                cartId: paymentIntent.metadata.cartId,
-                                promoCode: paymentIntent.metadata.promoCode,
-                                paymentIntentId: paymentIntent.id,
-                                usedAt: admin.firestore.FieldValue.serverTimestamp(),
-                            });
-                        }
-
-                        // Clear the cart
-                        if (paymentIntent.metadata.cartId) {
-                            await db.collection('carts').doc(paymentIntent.metadata.cartId).delete();
-                        }
-                    } catch (firestoreError) {
-                        logger.error('Failed to process successful payment in Firestore:', firestoreError);
-                    }
-
-                    logger.info('Payment succeeded', { paymentIntentId: paymentIntent.id });
-                    break;
-
-                case 'payment_intent.payment_failed':
-                    const failedPayment = event.data.object as Stripe.PaymentIntent;
-
-                    try {
-                        // Update payment intent status
-                        await db.collection('payment_intents').doc(failedPayment.id).update({
-                            status: 'failed',
-                            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                        });
-                    } catch (firestoreError) {
-                        logger.error('Failed to update failed payment in Firestore:', firestoreError);
-                    }
-
-                    logger.error('Payment failed', { paymentIntentId: failedPayment.id });
-                    break;
-
-                case 'payment_intent.requires_action':
-                    const actionRequired = event.data.object as Stripe.PaymentIntent;
-                    logger.info('Payment requires action', { paymentIntentId: actionRequired.id });
-                    break;
-
-                default:
-                    logger.info('Unhandled event type:', event.type);
-            }
-
-            response.json({ received: true });
-        } catch (error) {
-            logger.error('Webhook handler error:', error);
-            response.status(500).json({ error: 'Webhook handling failed' });
-        }
-    }
-);
-
-// 8. REFUND ENDPOINT - IMPROVED
-// 8. REFUND ENDPOINT - COMPLETELY FIXED
-export const createRefund = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        if (request.method === 'OPTIONS') {
-            response.status(204).send('');
-            return;
-        }
-
-        try {
-            const stripe = initializeStripe();
-            const { paymentIntentId, amount, reason = 'requested_by_customer' } = request.body;
-
-            if (!paymentIntentId?.trim()) {
-                response.status(400).json({ error: 'paymentIntentId is required' });
-                return;
-            }
-
-            // Validate refund amount if provided
-            if (amount !== undefined) {
-                if (typeof amount !== 'number' || amount <= 0) {
-                    response.status(400).json({ error: 'Amount must be a positive number' });
-                    return;
-                }
-            }
-
-            // Get the original payment intent to check the charge amount
-            let originalChargeAmount = 0;
-            try {
-                const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-                originalChargeAmount = paymentIntent.amount; // This is in cents
-            } catch (error) {
-                logger.error('Failed to retrieve payment intent for refund:', error);
-                response.status(400).json({ error: 'Invalid payment intent ID' });
-                return;
-            }
-
-            // Create refund
-            const refundData: any = {
-                payment_intent: paymentIntentId,
-                reason,
-            };
-
-            if (amount) {
-                refundData.amount = Math.round(amount * 100); // Convert to cents
-            }
-
-            const refund = await stripe.refunds.create(refundData);
-
-            // Store refund in Firestore
-            try {
-                // Properly determine refund status by comparing amounts
-                const refundAmountInCents = refund.amount;
-                const isFullRefund = refundAmountInCents === originalChargeAmount;
-
-                await db.collection('refunds').doc(refund.id).set({
-                    paymentIntentId,
-                    amount: refund.amount / 100,
-                    status: refund.status,
-                    reason: refund.reason,
-                    refundId: refund.id,
-                    isFullRefund: isFullRefund,
-                    originalChargeAmount: originalChargeAmount / 100,
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-
-                // Update the original order status
-                const orderQuery = await db.collection('orders')
-                    .where('paymentIntentId', '==', paymentIntentId)
-                    .limit(1)
-                    .get();
-
-                if (!orderQuery.empty) {
-                    const orderDoc = orderQuery.docs[0];
-                    const orderData = orderDoc.data();
-                    const previousRefundAmount = orderData.refundAmount || 0;
-                    const newRefundAmount = previousRefundAmount + (refund.amount / 100);
-                    const orderTotalAmount = orderData.amount || 0;
-
-                    // Determine order status based on total refunded amount
-                    let orderStatus = 'processing';
-                    if (newRefundAmount >= orderTotalAmount) {
-                        orderStatus = 'refunded';
-                    } else if (newRefundAmount > 0) {
-                        orderStatus = 'partially_refunded';
-                    }
-
-                    await orderDoc.ref.update({
-                        status: orderStatus,
-                        refundAmount: newRefundAmount,
-                        lastRefundId: refund.id,
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                }
-            } catch (firestoreError) {
-                logger.error('Failed to store refund in Firestore:', firestoreError);
-                // Don't fail the request, just log the warning
-            }
-
-            const result = {
-                id: refund.id,
-                paymentIntentId,
-                amount: refund.amount / 100,
-                status: refund.status,
-                reason: refund.reason,
-                isFullRefund: refund.amount === originalChargeAmount,
-                createdAt: new Date(refund.created * 1000).toISOString(),
-            };
-
-            logger.info('Refund created successfully', {
-                refundId: refund.id,
-                amount: refund.amount / 100,
-                paymentIntentId,
-                isFullRefund: refund.amount === originalChargeAmount
-            });
-
-            response.json(result);
-        } catch (error) {
-            logger.error('Refund creation error:', error);
-            response.status(500).json({
-                error: 'Refund creation failed',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-// 9. HEALTH CHECK ENDPOINT - IMPROVED
-export const healthCheck = functions.https.onRequest(
-    async (request, response) => {
-        setCorsHeaders(response);
-
-        try {
-            // Test Stripe connection
-            let stripeStatus = 'unknown';
-            try {
-                const stripe = initializeStripe();
-                await stripe.customers.list({ limit: 1 });
-                stripeStatus = 'connected';
-            } catch (stripeError) {
-                stripeStatus = 'error';
-                logger.warn('Stripe health check failed:', stripeError);
-            }
-
-            // Test Firestore connection
-            let firestoreStatus = 'unknown';
-            try {
-                await db.collection('health_check').doc('test').set({
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                });
-                await db.collection('health_check').doc('test').delete();
-                firestoreStatus = 'connected';
-            } catch (firestoreError) {
-                firestoreStatus = 'error';
-                logger.warn('Firestore health check failed:', firestoreError);
-            }
-
-            const result = {
-                status: 'healthy',
-                timestamp: new Date().toISOString(),
-                version: '2.0.0',
-                services: {
-                    stripe: stripeStatus,
-                    firestore: firestoreStatus,
-                },
-                endpoints: {
-                    calculateTax: 'available',
-                    calculateShipping: 'available',
-                    validatePromoCode: 'available',
-                    createPaymentIntent: 'available',
-                    createSetupIntent: 'available',
-                    confirmPayment: 'available',
-                    createRefund: 'available',
-                    stripeWebhook: 'available',
-                }
-            };
-
-            logger.info('Health check completed', result);
-            response.json(result);
-        } catch (error) {
-            logger.error('Health check error:', error);
-            response.status(500).json({
-                status: 'unhealthy',
-                timestamp: new Date().toISOString(),
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
-        }
-    }
-);
-
-// 10. FIRESTORE TRIGGERS - IMPROVED
-
-// Auto-cleanup expired carts
-export const cleanupExpiredCarts = functions.firestore
-    .document('carts/{cartId}')
-    .onCreate(async (snapshot, context) => {
-        const cartId = context.params.cartId;
-        const CART_EXPIRY_HOURS = 24;
-
-        try {
-            // Schedule cleanup after specified hours
-            setTimeout(async () => {
-                try {
-                    const cartDoc = await db.collection('carts').doc(cartId).get();
-                    if (cartDoc.exists) {
-                        const cartData = cartDoc.data();
-                        const createdAt = cartData?.createdAt?.toDate();
-
-                        if (createdAt) {
-                            const now = new Date();
-                            const hoursDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-
-                            if (hoursDiff >= CART_EXPIRY_HOURS) {
-                                await db.collection('carts').doc(cartId).delete();
-                                logger.info('Expired cart cleaned up', { cartId, hoursDiff });
-                            }
-                        }
-                    }
-                } catch (error) {
-                    logger.error('Cart cleanup error:', error);
-                }
-            }, CART_EXPIRY_HOURS * 60 * 60 * 1000);
-        } catch (error) {
-            logger.error('Cart cleanup scheduling error:', error);
-        }
-    });
-
-// Order status updates - IMPROVED
-export const onOrderStatusUpdate = functions.firestore
-    .document('orders/{orderId}')
-    .onUpdate(async (change, context) => {
-        const before = change.before.data();
-        const after = change.after.data();
-        const orderId = context.params.orderId;
-
-        try {
-            if (before?.status !== after?.status) {
-                logger.info('Order status updated', {
-                    orderId,
-                    oldStatus: before?.status,
-                    newStatus: after?.status,
-                    paymentIntentId: after?.paymentIntentId
-                });
-
-                // Store status change history
-                await db.collection('order_status_history').add({
-                    orderId,
-                    fromStatus: before?.status,
-                    toStatus: after?.status,
-                    paymentIntentId: after?.paymentIntentId,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                });
-
-                // Here you could trigger push notifications, emails, etc.
-                // Example: Send status update notification
-                if (after?.status === 'shipped' && after?.trackingNumber) {
-                    logger.info('Order shipped, notification triggered', {
-                        orderId,
-                        trackingNumber: after.trackingNumber
-                    });
-                    // Trigger notification service here
-                }
-            }
-        } catch (error) {
-            logger.error('Order status update processing error:', error);
-        }
-    });
-
-// 🆕 NEW: Payment intent status updates trigger
-export const onPaymentIntentStatusUpdate = functions.firestore
-    .document('payment_intents/{paymentIntentId}')
-    .onUpdate(async (change, context) => {
-        const before = change.before.data();
-        const after = change.after.data();
-        const paymentIntentId = context.params.paymentIntentId;
-
-        try {
-            if (before?.status !== after?.status) {
-                logger.info('Payment intent status updated', {
-                    paymentIntentId,
-                    oldStatus: before?.status,
-                    newStatus: after?.status,
-                    cartId: after?.cartId
-                });
-
-                // Handle specific status changes
-                if (after?.status === 'succeeded' && before?.status !== 'succeeded') {
-                    // Payment succeeded - could trigger order creation, inventory updates, etc.
-                    logger.info('Payment intent succeeded, order processing initiated', {
-                        paymentIntentId,
-                        cartId: after.cartId,
-                        amount: after.amount
-                    });
-                }
-
-                if (after?.status === 'canceled' && before?.status !== 'canceled') {
-                    // Payment was canceled - could restore cart, send notification, etc.
-                    logger.info('Payment intent canceled', {
-                        paymentIntentId,
-                        cartId: after.cartId
-                    });
-                }
-            }
-        } catch (error) {
-            logger.error('Payment intent status update processing error:', error);
-        }
-    });
-
-// 🆕 NEW: Error logging and monitoring
-export const logError = functions.https.onCall(async (data, context) => {
+// Authentication helper (implement based on your auth system)
+const authenticateRequest = async (request: functions.Request): Promise<{ isValid: boolean; userId?: string; userRole?: string }> => {
     try {
-        const { error, context: errorContext, userId } = data;
+        const authHeader = request.headers.authorization;
 
-        await db.collection('error_logs').add({
-            error: {
-                message: error.message,
-                stack: error.stack,
-                code: error.code
-            },
-            context: errorContext,
-            userId: userId || 'anonymous',
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            userAgent: context.rawRequest?.headers['user-agent'],
-            ip: context.rawRequest?.ip
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return { isValid: false };
+        }
+
+        const token = authHeader.substring(7);
+
+        // Verify Firebase ID token
+        const decodedToken = await admin.auth().verifyIdToken(token);
+
+        return {
+            isValid: true,
+            userId: decodedToken.uid,
+            userRole: decodedToken.role || 'customer'
+        };
+    } catch (error) {
+        logger.warn('Authentication failed:', error);
+        return { isValid: false };
+    }
+};
+
+// Cache helpers
+const getCacheKey = (productId: string, storeIds: string[]): string => {
+    return `inventory:${productId}:${storeIds.sort().join(',')}`;
+};
+
+const getFromCache = (key: string): any | null => {
+    const cached = inventoryCache.get(key);
+    if (cached && Date.now() < cached.expiry) {
+        return cached.data;
+    }
+    inventoryCache.delete(key);
+    return null;
+};
+
+const setCache = (key: string, data: any): void => {
+    inventoryCache.set(key, {
+        data,
+        expiry: Date.now() + CACHE_TTL
+    });
+};
+
+// Helper function to determine store type
+const determineStoreType = (name: string): 'Supercenter' | 'Neighborhood Market' | 'Pickup Only' | 'Express' => {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('supercenter')) return 'Supercenter';
+    if (lowerName.includes('neighborhood market')) return 'Neighborhood Market';
+    if (lowerName.includes('pickup') || lowerName.includes('curbside')) return 'Pickup Only';
+    if (lowerName.includes('express')) return 'Express';
+    return 'Supercenter'; // Default
+};
+
+// Helper function to parse address
+const parseAddress = (vicinity: string) => {
+    const parts = vicinity.split(', ');
+    const street = parts[0] || '';
+    const cityState = parts[1] || '';
+
+    // Try to extract city and state
+    const cityStateParts = cityState.split(' ');
+    const state = cityStateParts.pop() || '';
+    const city = cityStateParts.join(' ') || '';
+
+    return {
+        street,
+        city,
+        state,
+        zipCode: '',
+        fullAddress: vicinity,
+    };
+};
+
+
+// Initialize Anthropic client
+const getAnthropicClient = (): Anthropic => {
+    const apiKey = functions.config().anthropic?.api_key;
+    if (!apiKey) {
+        throw new Error('Anthropic API key not configured');
+    }
+    return new Anthropic({ apiKey });
+};
+
+// ========================================
+// CLAUDE AI CHAT COMPLETION
+// ========================================
+export const getChatResponse = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    if (req.method !== 'POST') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only POST requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Optional authentication - allow anonymous users for basic chat
+        let userId = 'anonymous';
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.substring(7);
+                const decodedToken = await admin.auth().verifyIdToken(token);
+                userId = decodedToken.uid;
+            } catch (authError) {
+                // Allow anonymous access for chat, just log the attempt
+                logger.info('Anonymous chat request');
+            }
+        }
+
+        // Rate limiting
+        if (!checkRateLimit(userId, 50, 60000)) { // 50 requests per minute
+            res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'Too many chat requests. Please try again later.'
+            });
+            return;
+        }
+
+        const { messages, systemPrompt, maxTokens = 1000 } = req.body;
+
+        if (!messages || !Array.isArray(messages)) {
+            res.status(400).json({
+                error: 'Validation failed',
+                message: 'Messages array is required'
+            });
+            return;
+        }
+
+        // Validate message format
+        for (const msg of messages) {
+            if (!msg.role || !msg.content || !['user', 'assistant'].includes(msg.role)) {
+                res.status(400).json({
+                    error: 'Validation failed',
+                    message: 'Each message must have role (user|assistant) and content'
+                });
+                return;
+            }
+        }
+
+        const anthropic = getAnthropicClient();
+
+        const response = await anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: Math.min(maxTokens, 4000), // Cap max tokens
+            system: systemPrompt || `You are a helpful Walmart shopping assistant. You help customers with:
+- Product questions and recommendations
+- Order tracking and support
+- Store information and services
+- Returns and refunds
+- Price matching and deals
+- Walmart+ membership benefits
+
+Be friendly, helpful, and concise. Always prioritize customer satisfaction.`,
+            messages: messages.map((msg: any) => ({
+                role: msg.role,
+                content: msg.content
+            }))
         });
 
-        logger.error('Client error logged', { error, context: errorContext, userId });
-        return { success: true };
-    } catch (logError) {
-        logger.error('Error logging failed:', logError);
-        return { success: false, error: 'Failed to log error' };
+        const content = response.content[0];
+        const text = content.type === 'text' ? content.text : '';
+
+        const responseTime = Date.now() - startTime;
+
+        logger.info('Chat response generated successfully', {
+            userId,
+            messageCount: messages.length,
+            responseTime,
+            tokensUsed: response.usage
+        });
+
+        res.json({
+            success: true,
+            response: text,
+            usage: response.usage,
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Chat response failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            responseTime
+        });
+
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Unable to generate response at this time',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
     }
 });
 
-logger.info('🚀 Walmart Mobile App Firebase Functions loaded successfully');
-logger.info('💳 Stripe integration active');
-logger.info('🔥 All payment endpoints ready');
-logger.info('✅ Enhanced error handling and validation enabled');
-logger.info('📊 Health monitoring and logging configured');
+// ========================================
+// SHOPPING ASSISTANCE
+// ========================================
+export const getShoppingAssistance = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    if (req.method !== 'POST') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only POST requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Optional authentication
+        let userId = 'anonymous';
+        let userProfile = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.substring(7);
+                const decodedToken = await admin.auth().verifyIdToken(token);
+                userId = decodedToken.uid;
+
+                // Get user profile if authenticated
+                const userDoc = await admin.firestore().collection('users').doc(userId).get();
+                userProfile = userDoc.exists ? userDoc.data() : null;
+            } catch (authError) {
+                logger.info('Anonymous shopping assistance request');
+            }
+        }
+
+        // Rate limiting
+        if (!checkRateLimit(userId, 30, 60000)) { // 30 requests per minute
+            res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'Too many assistance requests. Please try again later.'
+            });
+            return;
+        }
+
+        const { userMessage, context = {} } = req.body;
+
+        if (!userMessage || typeof userMessage !== 'string') {
+            res.status(400).json({
+                error: 'Validation failed',
+                message: 'User message is required'
+            });
+            return;
+        }
+
+        const anthropic = getAnthropicClient();
+
+        const systemPrompt = `You are a helpful Walmart shopping assistant. Help users with:
+
+- Product recommendations and comparisons
+- Finding specific items
+- Price and deal information
+- Store services and policies
+- Order and shipping questions
+- General shopping advice
+
+Be conversational, helpful, and concise. Use the provided context to give relevant assistance.`;
+
+        const contextInfo = `
+Current Context:
+- Page: ${context.currentPage || 'unknown'}
+- Cart Items: ${context.cartItems?.length || 0} items
+- Current Product: ${context.currentProduct?.name || 'none'}
+- User: ${userProfile?.displayName || 'Guest'}
+- User Location: ${userProfile?.location?.city || 'unknown'}
+        `;
+
+        const response = await anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 400,
+            system: systemPrompt,
+            messages: [{
+                role: 'user',
+                content: `${contextInfo}\n\nUser Message: ${userMessage}`
+            }]
+        });
+
+        const content = response.content[0];
+        const text = content.type === 'text' ? content.text : 'How can I help you with your shopping today?';
+
+        const responseTime = Date.now() - startTime;
+
+        logger.info('Shopping assistance provided', {
+            userId,
+            hasContext: Object.keys(context).length > 0,
+            responseTime
+        });
+
+        res.json({
+            success: true,
+            response: text,
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Shopping assistance failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            responseTime
+        });
+
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Shopping assistance unavailable at this time',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+    }
+});
+
+// ========================================
+// PRODUCT Q&A
+// ========================================
+export const answerProductQuestion = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    if (req.method !== 'POST') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only POST requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Optional authentication
+        let userId = 'anonymous';
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.substring(7);
+                const decodedToken = await admin.auth().verifyIdToken(token);
+                userId = decodedToken.uid;
+            } catch (authError) {
+                logger.info('Anonymous product Q&A request');
+            }
+        }
+
+        // Rate limiting
+        if (!checkRateLimit(userId, 20, 60000)) { // 20 requests per minute
+            res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'Too many questions. Please try again later.'
+            });
+            return;
+        }
+
+        const { question, productData } = req.body;
+
+        if (!question || !productData) {
+            res.status(400).json({
+                error: 'Validation failed',
+                message: 'Question and product data are required'
+            });
+            return;
+        }
+
+        const anthropic = getAnthropicClient();
+
+        const systemPrompt = `You are a product expert AI for Walmart. Answer customer questions about specific products using the provided product information.
+
+Be accurate, helpful, and honest. If you don't have specific information, say so and suggest contacting customer service or checking reviews.`;
+
+        const productContext = `
+Product: ${productData.name || 'Unknown'}
+Brand: ${productData.brand || 'Unknown'}
+Description: ${productData.description || 'No description available'}
+Features: ${JSON.stringify(productData.features || [])}
+Specifications: ${JSON.stringify(productData.specifications || {})}
+Price: $${productData.price || 'Unknown'}
+Average Rating: ${productData.rating || 'N/A'}/5 (${productData.reviewCount || 0} reviews)
+        `;
+
+        const response = await anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 300,
+            system: systemPrompt,
+            messages: [{
+                role: 'user',
+                content: `Product Information:\n${productContext}\n\nCustomer Question: ${question}`
+            }]
+        });
+
+        const content = response.content[0];
+        const text = content.type === 'text' ? content.text : 'I need more information to answer that question.';
+
+        const responseTime = Date.now() - startTime;
+
+        logger.info('Product question answered', {
+            userId,
+            productId: productData.id,
+            responseTime
+        });
+
+        res.json({
+            success: true,
+            response: text,
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Product Q&A failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            responseTime
+        });
+
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Unable to answer question at this time',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+    }
+});
+
+// ========================================
+// SEARCH ENHANCEMENT
+// ========================================
+export const enhanceSearch = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    if (req.method !== 'POST') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only POST requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Optional authentication
+        let userId = 'anonymous';
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.substring(7);
+                const decodedToken = await admin.auth().verifyIdToken(token);
+                userId = decodedToken.uid;
+            } catch (authError) {
+                logger.info('Anonymous search enhancement request');
+            }
+        }
+
+        // Rate limiting
+        if (!checkRateLimit(userId, 40, 60000)) { // 40 requests per minute
+            res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'Too many search requests. Please try again later.'
+            });
+            return;
+        }
+
+        const { query } = req.body;
+
+        if (!query || typeof query !== 'string') {
+            res.status(400).json({
+                error: 'Validation failed',
+                message: 'Search query is required'
+            });
+            return;
+        }
+
+        const anthropic = getAnthropicClient();
+
+        const systemPrompt = `You are a product search enhancement AI for Walmart. 
+
+Given a natural language search query, extract:
+1. Enhanced search terms
+2. Product categories/filters
+3. Price range if mentioned
+4. Brand preferences
+5. Alternative search suggestions
+
+Return a JSON object with:
+- enhancedQuery: refined search terms
+- searchTerms: array of key terms
+- filters: {category?, brand?, minPrice?, maxPrice?, features?}
+- suggestions: array of alternative searches`;
+
+        const response = await anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 500,
+            system: systemPrompt,
+            messages: [{
+                role: 'user',
+                content: `Enhance this search query: "${query}"`
+            }]
+        });
+
+        const content = response.content[0];
+        const text = content.type === 'text' ? content.text : '';
+
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (parseError) {
+            // Fallback if JSON parsing fails
+            result = {
+                enhancedQuery: query,
+                searchTerms: query.split(' '),
+                filters: {},
+                suggestions: []
+            };
+        }
+
+        const responseTime = Date.now() - startTime;
+
+        logger.info('Search enhanced successfully', {
+            userId,
+            originalQuery: query,
+            responseTime
+        });
+
+        res.json({
+            success: true,
+            result,
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Search enhancement failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            responseTime
+        });
+
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Search enhancement unavailable',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+    }
+});
+
+// ========================================
+// REVIEW SUMMARIZATION
+// ========================================
+export const summarizeReviews = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    if (req.method !== 'POST') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only POST requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Optional authentication
+        let userId = 'anonymous';
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.substring(7);
+                const decodedToken = await admin.auth().verifyIdToken(token);
+                userId = decodedToken.uid;
+            } catch (authError) {
+                logger.info('Anonymous review summarization request');
+            }
+        }
+
+        // Rate limiting
+        if (!checkRateLimit(userId, 10, 60000)) { // 10 requests per minute
+            res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'Too many summarization requests. Please try again later.'
+            });
+            return;
+        }
+
+        const { reviews } = req.body;
+
+        if (!reviews || !Array.isArray(reviews)) {
+            res.status(400).json({
+                error: 'Validation failed',
+                message: 'Reviews array is required'
+            });
+            return;
+        }
+
+        const reviewTexts = reviews.map(review =>
+            `Rating: ${review.rating}/5 - ${review.title || ''} ${review.comment || ''}`
+        ).slice(0, 20); // Limit to 20 reviews
+
+        const anthropic = getAnthropicClient();
+
+        const systemPrompt = `You are a review analysis AI for Walmart products. 
+
+Analyze customer reviews and provide:
+1. A concise summary of overall customer sentiment
+2. Top 3-5 pros (what customers love)
+3. Top 3-5 cons (what customers complain about)
+4. Common themes mentioned
+5. Recommendation score (0-100) based on overall satisfaction
+
+Return JSON format:
+{
+  "summary": "Brief overview of customer sentiment",
+  "pros": ["positive point 1", "positive point 2", ...],
+  "cons": ["negative point 1", "negative point 2", ...],
+  "commonThemes": ["theme 1", "theme 2", ...],
+  "recommendationScore": 85
+}`;
+
+        const response = await anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 800,
+            system: systemPrompt,
+            messages: [{
+                role: 'user',
+                content: `Analyze these product reviews:\n\n${reviewTexts.join('\n\n')}`
+            }]
+        });
+
+        const content = response.content[0];
+        const text = content.type === 'text' ? content.text : '';
+
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (parseError) {
+            // Fallback
+            result = {
+                summary: "Customer reviews are generally positive with some mixed feedback.",
+                pros: ["Good value", "Works as expected"],
+                cons: ["Some quality concerns"],
+                commonThemes: ["Value", "Quality"],
+                recommendationScore: 75
+            };
+        }
+
+        const responseTime = Date.now() - startTime;
+
+        logger.info('Reviews summarized successfully', {
+            userId,
+            reviewCount: reviews.length,
+            responseTime
+        });
+
+        res.json({
+            success: true,
+            result,
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Review summarization failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            responseTime
+        });
+
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Review analysis unavailable',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+    }
+});
+
+// Main function
+export const getProductAvailability = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only POST requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Authentication
+        const authResult = await authenticateRequest(req);
+        if (!authResult.isValid) {
+            res.status(401).json({
+                error: 'Unauthorized',
+                message: 'Valid authentication token required'
+            });
+            return;
+        }
+
+        // Rate limiting
+        const clientId = authResult.userId || req.ip;
+        if (!checkRateLimit(clientId)) {
+            res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'Too many requests. Please try again later.'
+            });
+            return;
+        }
+
+        // Input validation
+        const validation = validateInventoryRequest(req.body);
+        if (!validation.isValid) {
+            res.status(400).json({
+                error: 'Validation failed',
+                message: 'Invalid request parameters',
+                details: validation.errors
+            });
+            return;
+        }
+
+        const { productId, storeIds, includeQuantity = false }: InventoryRequest = req.body;
+
+        // Check cache first
+        const cacheKey = getCacheKey(productId, storeIds);
+        const cachedResult = getFromCache(cacheKey);
+        if (cachedResult) {
+            logger.info('Inventory data served from cache', {
+                productId,
+                storeCount: storeIds.length,
+                userId: authResult.userId
+            });
+
+            res.json({
+                inventory: cachedResult,
+                cached: true,
+                requestId: `req_${Date.now()}`
+            });
+            return;
+        }
+
+        // Permission check for quantity data
+        const canViewQuantity = includeQuantity && (
+            authResult.userRole === 'admin' ||
+            authResult.userRole === 'manager' ||
+            authResult.userRole === 'employee'
+        );
+
+        // Batch query for better performance
+        const db = admin.firestore();
+        const batch = db.batch();
+
+        const inventoryPromises = storeIds.map(async (storeId) => {
+            try {
+                const docRef = db
+                    .collection('stores')
+                    .doc(storeId)
+                    .collection('inventory')
+                    .doc(productId);
+
+                const doc = await docRef.get();
+
+                if (doc.exists) {
+                    const data = doc.data();
+                    const quantity = data?.quantity || 0;
+
+                    // Abstract quantity into availability levels for regular users
+                    const getAvailabilityLevel = (qty: number): 'high' | 'medium' | 'low' => {
+                        if (qty >= 10) return 'high';
+                        if (qty >= 3) return 'medium';
+                        return 'low';
+                    };
+
+                    const response: InventoryResponse = {
+                        storeId,
+                        productId,
+                        inStock: data?.inStock === true && quantity > 0,
+                        lastUpdated: data?.lastUpdated || new Date().toISOString(),
+                        estimatedAvailability: getAvailabilityLevel(quantity)
+                    };
+
+                    // Only include exact quantity for authorized users
+                    if (canViewQuantity) {
+                        response.quantity = quantity;
+                    }
+
+                    return response;
+                }
+
+                return {
+                    storeId,
+                    productId,
+                    inStock: false,
+                    lastUpdated: new Date().toISOString(),
+                    estimatedAvailability: 'low' as const
+                };
+
+            } catch (error) {
+                logger.error(`Failed to fetch inventory for store ${storeId}:`, error);
+
+                // Return error state instead of throwing
+                return {
+                    storeId,
+                    productId,
+                    inStock: false,
+                    lastUpdated: new Date().toISOString(),
+                    estimatedAvailability: 'low' as const,
+                    error: 'Failed to fetch data'
+                };
+            }
+        });
+
+        const inventory = await Promise.all(inventoryPromises);
+
+        // Cache the result
+        setCache(cacheKey, inventory);
+
+        const responseTime = Date.now() - startTime;
+
+        // Log successful request
+        logger.info('Product availability retrieved successfully', {
+            productId,
+            storeCount: storeIds.length,
+            userId: authResult.userId,
+            responseTime,
+            includeQuantity: canViewQuantity
+        });
+
+        res.json({
+            inventory,
+            cached: false,
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Product availability request failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            responseTime,
+            method: req.method,
+            url: req.url
+        });
+
+        // Return sanitized error response
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Unable to retrieve product availability at this time',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+    }
+});
+
+export const getStores = functions.https.onRequest(async (req, res) => {
+    setCorsHeaders(res);
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
+    if (req.method !== 'GET') {
+        res.status(405).json({
+            error: 'Method not allowed',
+            message: 'Only GET requests are supported'
+        });
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        const { latitude, longitude, radius = 25000 } = req.query;
+
+        // Get the API key from Firebase config
+        const GOOGLE_PLACES_API_KEY = functions.config().google?.places_api_key;
+
+        if (!GOOGLE_PLACES_API_KEY) {
+            logger.error('Google Places API key not configured');
+            res.status(500).json({ error: 'API configuration error' });
+            return;
+        }
+
+        if (latitude && longitude) {
+            try {
+                logger.info('Calling Google Places API', {
+                    latitude: latitude,
+                    longitude: longitude,
+                    radius: radius
+                });
+
+                // Call Google Places API
+                const placesResponse = await fetch(
+                    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&radius=80000&type=store&keyword=walmart&key=${GOOGLE_PLACES_API_KEY}`
+                );
+
+                if (!placesResponse.ok) {
+                    throw new Error(`HTTP ${placesResponse.status}: ${placesResponse.statusText}`);
+                }
+
+                const placesData = await placesResponse.json() as GooglePlacesResponse;
+
+                logger.info('Google Places API response', {
+                    status: placesData.status,
+                    resultCount: placesData.results?.length || 0
+                });
+
+                if (placesData.status === 'OK' && placesData.results && placesData.results.length > 0) {
+                    // Transform Google Places results to your store format
+                    const stores = placesData.results
+                        .filter(place => place.name.toLowerCase().includes('walmart'))
+                        .map(place => {
+                            const address = parseAddress(place.vicinity);
+                            const storeType = determineStoreType(place.name);
+
+                            return {
+                                id: place.place_id,
+                                name: place.name,
+                                storeNumber: place.place_id.slice(-6),
+                                address,
+                                phone: '',
+                                coordinates: {
+                                    latitude: place.geometry.location.lat,
+                                    longitude: place.geometry.location.lng,
+                                },
+                                rating: place.rating || 0,
+                                reviewCount: place.user_ratings_total || 0,
+                                isOpen: place.opening_hours?.open_now || false,
+                                hours: {
+                                    monday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                    tuesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                    wednesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                    thursday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                    friday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                    saturday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                    sunday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                                },
+                                services: storeType === 'Supercenter'
+                                    ? ['Pharmacy', 'Auto Center', 'Vision Center', 'Grocery Pickup', 'Photo Center']
+                                    : ['Grocery Pickup'],
+                                storeType,
+                                features: storeType === 'Supercenter'
+                                    ? ['24/7 ATM', 'Free WiFi', 'Garden Center']
+                                    : ['Free WiFi'],
+                                pickupAvailable: true,
+                                deliveryAvailable: storeType !== 'Pickup Only',
+                                curbsideAvailable: true,
+                                currentCapacity: Math.floor(Math.random() * 40) + 60,
+                                estimatedWaitTime: Math.floor(Math.random() * 10) + 2,
+                                lastUpdated: new Date().toISOString(),
+                            };
+                        });
+
+                    logger.info('Stores retrieved successfully from Google Places', {
+                        storeCount: stores.length,
+                        responseTime: Date.now() - startTime,
+                    });
+
+                    res.json({
+                        stores,
+                        source: 'google_places',
+                        requestId: `req_${Date.now()}`,
+                        responseTime: Date.now() - startTime
+                    });
+                    return;
+                } else {
+                    logger.warn('Google Places API returned non-OK status', {
+                        status: placesData.status,
+                        error: placesData.error_message
+                    });
+                }
+            } catch (error) {
+                logger.error('Error calling Google Places API:', error);
+            }
+        }
+
+        // Fallback to mock store data
+        logger.info('Using fallback mock store data');
+
+        // Enhanced mock stores with Bay Area coverage
+        const mockStores = [
+            {
+                id: 'walmart-fremont',
+                name: 'Walmart Supercenter',
+                storeNumber: '2785',
+                address: {
+                    street: '39770 Argonaut Way',
+                    city: 'Fremont',
+                    state: 'CA',
+                    zipCode: '94538',
+                    fullAddress: '39770 Argonaut Way, Fremont, CA 94538',
+                },
+                phone: '(510) 742-9977',
+                coordinates: { latitude: 37.5485, longitude: -121.9886 },
+                rating: 4.1,
+                reviewCount: 2156,
+                isOpen: true,
+                hours: {
+                    monday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    tuesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    wednesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    thursday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    friday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    saturday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    sunday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                },
+                services: ['Pharmacy', 'Auto Center', 'Vision Center', 'Grocery Pickup', 'Photo Center', 'Garden Center'],
+                storeType: 'Supercenter' as const,
+                features: ['24/7 ATM', 'Free WiFi', 'Garden Center', 'Subway'],
+                pickupAvailable: true,
+                deliveryAvailable: true,
+                curbsideAvailable: true,
+                currentCapacity: 78,
+                estimatedWaitTime: 4,
+                lastUpdated: new Date().toISOString(),
+            },
+            {
+                id: 'walmart-san-jose',
+                name: 'Walmart Supercenter',
+                storeNumber: '2675',
+                address: {
+                    street: '777 Story Rd',
+                    city: 'San Jose',
+                    state: 'CA',
+                    zipCode: '95122',
+                    fullAddress: '777 Story Rd, San Jose, CA 95122',
+                },
+                phone: '(408) 926-8244',
+                coordinates: { latitude: 37.3394, longitude: -121.8553 },
+                rating: 3.9,
+                reviewCount: 1892,
+                isOpen: true,
+                hours: {
+                    monday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    tuesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    wednesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    thursday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    friday: { open: '6:00 AM', close: '12:00 AM', isOpen: true },
+                    saturday: { open: '6:00 AM', close: '12:00 AM', isOpen: true },
+                    sunday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                },
+                services: ['Pharmacy', 'Auto Center', 'Vision Center', 'Grocery Pickup', 'Money Services'],
+                storeType: 'Supercenter' as const,
+                features: ['24/7 ATM', 'Free WiFi', 'Tire & Lube', 'McDonald\'s'],
+                pickupAvailable: true,
+                deliveryAvailable: true,
+                curbsideAvailable: true,
+                currentCapacity: 82,
+                estimatedWaitTime: 6,
+                lastUpdated: new Date().toISOString(),
+            },
+            {
+                id: 'walmart-neighborhood-milpitas',
+                name: 'Walmart Neighborhood Market',
+                storeNumber: '5260',
+                address: {
+                    street: '1827 Landess Ave',
+                    city: 'Milpitas',
+                    state: 'CA',
+                    zipCode: '95035',
+                    fullAddress: '1827 Landess Ave, Milpitas, CA 95035',
+                },
+                phone: '(408) 719-0292',
+                coordinates: { latitude: 37.4323, longitude: -121.9077 },
+                rating: 4.3,
+                reviewCount: 743,
+                isOpen: true,
+                hours: {
+                    monday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    tuesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    wednesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    thursday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    friday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    saturday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    sunday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                },
+                services: ['Pharmacy', 'Grocery Pickup', 'Money Services'],
+                storeType: 'Neighborhood Market' as const,
+                features: ['Fresh Produce', 'Deli', 'Bakery', 'Free WiFi'],
+                pickupAvailable: true,
+                deliveryAvailable: true,
+                curbsideAvailable: false,
+                currentCapacity: 65,
+                estimatedWaitTime: 3,
+                lastUpdated: new Date().toISOString(),
+            },
+            {
+                id: 'walmart-pickup-mountain-view',
+                name: 'Walmart Pickup Point',
+                storeNumber: '6180',
+                address: {
+                    street: '600 Showers Dr',
+                    city: 'Mountain View',
+                    state: 'CA',
+                    zipCode: '94040',
+                    fullAddress: '600 Showers Dr, Mountain View, CA 94040',
+                },
+                phone: '(650) 988-0163',
+                coordinates: { latitude: 37.4030, longitude: -122.0827 },
+                rating: 4.6,
+                reviewCount: 312,
+                isOpen: true,
+                hours: {
+                    monday: { open: '8:00 AM', close: '8:00 PM', isOpen: true },
+                    tuesday: { open: '8:00 AM', close: '8:00 PM', isOpen: true },
+                    wednesday: { open: '8:00 AM', close: '8:00 PM', isOpen: true },
+                    thursday: { open: '8:00 AM', close: '8:00 PM', isOpen: true },
+                    friday: { open: '8:00 AM', close: '8:00 PM', isOpen: true },
+                    saturday: { open: '8:00 AM', close: '8:00 PM', isOpen: true },
+                    sunday: { open: '8:00 AM', close: '6:00 PM', isOpen: true },
+                },
+                services: ['Grocery Pickup', 'Online Order Pickup'],
+                storeType: 'Pickup Only' as const,
+                features: ['Curbside Pickup', 'Express Pickup', 'Free WiFi'],
+                pickupAvailable: true,
+                deliveryAvailable: false,
+                curbsideAvailable: true,
+                currentCapacity: 95,
+                estimatedWaitTime: 2,
+                lastUpdated: new Date().toISOString(),
+            },
+            {
+                id: 'walmart-main',
+                name: 'Walmart Supercenter',
+                storeNumber: '4700',
+                address: {
+                    street: '4700 Kearny Mesa Rd',
+                    city: 'San Diego',
+                    state: 'CA',
+                    zipCode: '92111',
+                    fullAddress: '4700 Kearny Mesa Rd, San Diego, CA 92111',
+                },
+                phone: '(858) 279-6845',
+                coordinates: { latitude: 32.8197, longitude: -117.1411 },
+                rating: 4.2,
+                reviewCount: 1847,
+                isOpen: true,
+                hours: {
+                    monday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    tuesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    wednesday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    thursday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    friday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    saturday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                    sunday: { open: '6:00 AM', close: '11:00 PM', isOpen: true },
+                },
+                services: ['Pharmacy', 'Auto Center', 'Vision Center', 'Grocery Pickup', 'Photo Center'],
+                storeType: 'Supercenter' as const,
+                features: ['24/7 ATM', 'Free WiFi', 'Garden Center', 'McDonald\'s'],
+                pickupAvailable: true,
+                deliveryAvailable: true,
+                curbsideAvailable: true,
+                currentCapacity: 85,
+                estimatedWaitTime: 5,
+                lastUpdated: new Date().toISOString(),
+            },
+        ];
+
+        // Calculate distances and sort by proximity if location provided
+        const mockStoresWithDistance = latitude && longitude
+            ? mockStores.map(store => ({
+                ...store,
+                distance: calculateDistance(
+                    parseFloat(latitude as string),
+                    parseFloat(longitude as string),
+                    store.coordinates.latitude,
+                    store.coordinates.longitude
+                )
+            })).sort((a, b) => (a.distance || 0) - (b.distance || 0))
+            : mockStores;
+
+        const responseTime = Date.now() - startTime;
+
+        logger.info('Stores retrieved successfully (fallback)', {
+            storeCount: mockStoresWithDistance.length,
+            responseTime,
+            hasLocation: !!(latitude && longitude)
+        });
+
+        res.json({
+            stores: mockStoresWithDistance,
+            source: 'fallback',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+
+        logger.error('Store retrieval failed:', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            responseTime
+        });
+
+        res.status(500).json({
+            error: 'Internal server error',
+            message: 'Unable to retrieve stores at this time',
+            requestId: `req_${Date.now()}`,
+            responseTime
+        });
+    }
+});
+
+// Cleanup function for cache and rate limiting (call periodically)
+export const cleanupMemoryStores = functions.pubsub
+    .schedule('every 10 minutes')
+    .onRun(async (context) => {
+        const now = Date.now();
+
+        // Clean expired cache entries
+        for (const [key, value] of inventoryCache.entries()) {
+            if (now >= value.expiry) {
+                inventoryCache.delete(key);
+            }
+        }
+
+        // Clean expired rate limit entries
+        for (const [key, value] of rateLimitStore.entries()) {
+            if (now >= value.resetTime) {
+                rateLimitStore.delete(key);
+            }
+        }
+
+        logger.info('Memory stores cleaned up', {
+            cacheSize: inventoryCache.size,
+            rateLimitSize: rateLimitStore.size
+        });
+    });

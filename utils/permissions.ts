@@ -1,11 +1,12 @@
-export interface Permission {
-    id: string;
-    name: string;
-    description: string;
-    category: PermissionCategory;
-    level: PermissionLevel;
-    dependencies?: string[];
-}
+import { Camera } from 'expo-camera';
+import { BarCodeScanner } from 'expo-barcode-scanner';
+import * as MediaLibrary from 'expo-media-library';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import * as Contacts from 'expo-contacts';
+import * as Calendar from 'expo-calendar';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { Alert, Platform, Linking } from 'react-native';
 
 export enum PermissionCategory {
     AUTHENTICATION = 'authentication',
@@ -13,6 +14,7 @@ export enum PermissionCategory {
     SHOPPING = 'shopping',
     PAYMENT = 'payment',
     LOCATION = 'location',
+    LOCATION_BACKGROUND = 'location_background',
     NOTIFICATIONS = 'notifications',
     CAMERA = 'camera',
     CONTACTS = 'contacts',
@@ -27,6 +29,15 @@ export enum PermissionLevel {
     READ = 'read',
     WRITE = 'write',
     ADMIN = 'admin',
+}
+
+export interface Permission {
+    id: string;
+    name: string;
+    description: string;
+    category: PermissionCategory;
+    level: PermissionLevel;
+    dependencies?: string[];
 }
 
 export interface UserPermissions {
@@ -65,440 +76,557 @@ export interface PermissionGrant {
     isActive: boolean;
 }
 
-// Default permissions for Walmart app
-export const DEFAULT_PERMISSIONS: Permission[] = [
-    // Authentication
-    {
-        id: 'auth.login',
-        name: 'Login',
-        description: 'Ability to log into the application',
-        category: PermissionCategory.AUTHENTICATION,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'auth.register',
-        name: 'Register',
-        description: 'Ability to create new account',
-        category: PermissionCategory.AUTHENTICATION,
-        level: PermissionLevel.WRITE,
-    },
-    {
-        id: 'auth.social_login',
-        name: 'Social Login',
-        description: 'Ability to login with social providers',
-        category: PermissionCategory.AUTHENTICATION,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'auth.biometric',
-        name: 'Biometric Authentication',
-        description: 'Use fingerprint/face ID for authentication',
-        category: PermissionCategory.BIOMETRICS,
-        level: PermissionLevel.READ,
-    },
+export interface PermissionStatus {
+    granted: boolean;
+    canAskAgain?: boolean;
+    status: string;
+    expires?: 'never' | number;
+}
 
-    // Profile Management
-    {
-        id: 'profile.view',
-        name: 'View Profile',
-        description: 'View own profile information',
-        category: PermissionCategory.PROFILE,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'profile.edit',
-        name: 'Edit Profile',
-        description: 'Edit own profile information',
-        category: PermissionCategory.PROFILE,
-        level: PermissionLevel.WRITE,
-        dependencies: ['profile.view'],
-    },
-    {
-        id: 'profile.delete',
-        name: 'Delete Account',
-        description: 'Delete own account permanently',
-        category: PermissionCategory.PROFILE,
-        level: PermissionLevel.ADMIN,
-        dependencies: ['profile.view', 'profile.edit'],
-    },
+export interface PermissionResult {
+    [key: string]: PermissionStatus;
+}
 
-    // Shopping
-    {
-        id: 'shopping.browse',
-        name: 'Browse Products',
-        description: 'Browse and search products',
-        category: PermissionCategory.SHOPPING,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'shopping.cart',
-        name: 'Shopping Cart',
-        description: 'Add/remove items from cart',
-        category: PermissionCategory.SHOPPING,
-        level: PermissionLevel.WRITE,
-        dependencies: ['shopping.browse'],
-    },
-    {
-        id: 'shopping.wishlist',
-        name: 'Wishlist',
-        description: 'Manage wishlist items',
-        category: PermissionCategory.SHOPPING,
-        level: PermissionLevel.WRITE,
-        dependencies: ['shopping.browse'],
-    },
-    {
-        id: 'shopping.orders',
-        name: 'Order Management',
-        description: 'View and manage orders',
-        category: PermissionCategory.SHOPPING,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'shopping.reviews',
-        name: 'Product Reviews',
-        description: 'Write and manage product reviews',
-        category: PermissionCategory.SHOPPING,
-        level: PermissionLevel.WRITE,
-    },
+export interface PermissionContext {
+    feature: string;
+    reason: string;
+    isRequired: boolean;
+}
 
-    // Payment
-    {
-        id: 'payment.methods',
-        name: 'Payment Methods',
-        description: 'Manage payment methods',
-        category: PermissionCategory.PAYMENT,
-        level: PermissionLevel.WRITE,
-    },
-    {
-        id: 'payment.process',
-        name: 'Process Payments',
-        description: 'Process payments for orders',
-        category: PermissionCategory.PAYMENT,
-        level: PermissionLevel.WRITE,
-        dependencies: ['payment.methods'],
-    },
-    {
-        id: 'payment.refunds',
-        name: 'Request Refunds',
-        description: 'Request refunds for orders',
-        category: PermissionCategory.PAYMENT,
-        level: PermissionLevel.WRITE,
-    },
-    {
-        id: 'payment.walmart_plus',
-        name: 'Walmart+ Membership',
-        description: 'Manage Walmart+ subscription',
-        category: PermissionCategory.PAYMENT,
-        level: PermissionLevel.WRITE,
-    },
+export class WalmartPermissionService {
+    private static instance: WalmartPermissionService;
+    private permissionContexts: Map<PermissionCategory, PermissionContext[]> = new Map();
 
-    // Location
-    {
-        id: 'location.access',
-        name: 'Location Access',
-        description: 'Access device location for store finder and delivery',
-        category: PermissionCategory.LOCATION,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'location.stores',
-        name: 'Store Locator',
-        description: 'Find nearby Walmart stores',
-        category: PermissionCategory.LOCATION,
-        level: PermissionLevel.READ,
-        dependencies: ['location.access'],
-    },
-    {
-        id: 'location.delivery',
-        name: 'Delivery Tracking',
-        description: 'Track delivery location in real-time',
-        category: PermissionCategory.LOCATION,
-        level: PermissionLevel.READ,
-        dependencies: ['location.access'],
-    },
-
-    // Notifications
-    {
-        id: 'notifications.push',
-        name: 'Push Notifications',
-        description: 'Receive push notifications',
-        category: PermissionCategory.NOTIFICATIONS,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'notifications.email',
-        name: 'Email Notifications',
-        description: 'Receive email notifications',
-        category: PermissionCategory.NOTIFICATIONS,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'notifications.sms',
-        name: 'SMS Notifications',
-        description: 'Receive SMS notifications',
-        category: PermissionCategory.NOTIFICATIONS,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'notifications.marketing',
-        name: 'Marketing Communications',
-        description: 'Receive marketing and promotional content',
-        category: PermissionCategory.NOTIFICATIONS,
-        level: PermissionLevel.READ,
-    },
-
-    // Camera
-    {
-        id: 'camera.access',
-        name: 'Camera Access',
-        description: 'Access device camera',
-        category: PermissionCategory.CAMERA,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'camera.barcode_scan',
-        name: 'Barcode Scanner',
-        description: 'Scan product barcodes',
-        category: PermissionCategory.CAMERA,
-        level: PermissionLevel.READ,
-        dependencies: ['camera.access'],
-    },
-    {
-        id: 'camera.product_photos',
-        name: 'Product Photos',
-        description: 'Take photos for reviews or returns',
-        category: PermissionCategory.CAMERA,
-        level: PermissionLevel.WRITE,
-        dependencies: ['camera.access'],
-    },
-
-    // Files
-    {
-        id: 'files.read',
-        name: 'Read Files',
-        description: 'Read files from device storage',
-        category: PermissionCategory.FILES,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'files.write',
-        name: 'Write Files',
-        description: 'Save files to device storage',
-        category: PermissionCategory.FILES,
-        level: PermissionLevel.WRITE,
-    },
-
-    // Contacts
-    {
-        id: 'contacts.access',
-        name: 'Contacts Access',
-        description: 'Access device contacts for sharing',
-        category: PermissionCategory.CONTACTS,
-        level: PermissionLevel.READ,
-    },
-
-    // Calendar
-    {
-        id: 'calendar.access',
-        name: 'Calendar Access',
-        description: 'Access calendar for delivery scheduling',
-        category: PermissionCategory.CALENDAR,
-        level: PermissionLevel.READ,
-    },
-    {
-        id: 'calendar.events',
-        name: 'Calendar Events',
-        description: 'Create calendar events for deliveries',
-        category: PermissionCategory.CALENDAR,
-        level: PermissionLevel.WRITE,
-        dependencies: ['calendar.access'],
-    },
-];
-
-// Default roles
-export const DEFAULT_ROLES: Role[] = [
-    {
-        id: 'customer',
-        name: 'Customer',
-        description: 'Standard customer with basic shopping permissions',
-        permissions: [
-            'auth.login',
-            'auth.register',
-            'auth.social_login',
-            'profile.view',
-            'profile.edit',
-            'shopping.browse',
-            'shopping.cart',
-            'shopping.wishlist',
-            'shopping.orders',
-            'shopping.reviews',
-            'payment.methods',
-            'payment.process',
-            'payment.refunds',
-            'location.access',
-            'location.stores',
-            'location.delivery',
-            'notifications.push',
-            'notifications.email',
-            'camera.access',
-            'camera.barcode_scan',
-            'camera.product_photos',
-        ],
-        isDefault: true,
-        isSystem: true,
-    },
-    {
-        id: 'walmart_plus_member',
-        name: 'Walmart+ Member',
-        description: 'Walmart+ member with premium features',
-        permissions: [
-            'auth.login',
-            'auth.register',
-            'auth.social_login',
-            'auth.biometric',
-            'profile.view',
-            'profile.edit',
-            'shopping.browse',
-            'shopping.cart',
-            'shopping.wishlist',
-            'shopping.orders',
-            'shopping.reviews',
-            'payment.methods',
-            'payment.process',
-            'payment.refunds',
-            'payment.walmart_plus',
-            'location.access',
-            'location.stores',
-            'location.delivery',
-            'notifications.push',
-            'notifications.email',
-            'notifications.sms',
-            'notifications.marketing',
-            'camera.access',
-            'camera.barcode_scan',
-            'camera.product_photos',
-            'files.read',
-            'files.write',
-            'contacts.access',
-            'calendar.access',
-            'calendar.events',
-        ],
-        isDefault: false,
-        isSystem: true,
-    },
-    {
-        id: 'guest',
-        name: 'Guest',
-        description: 'Guest user with limited permissions',
-        permissions: [
-            'shopping.browse',
-            'location.stores',
-        ],
-        isDefault: false,
-        isSystem: true,
-    },
-];
-
-// Permission utility functions
-export class PermissionManager {
-    static hasPermission(
-        userPermissions: UserPermissions,
-        permissionId: string,
-        requiredLevel: PermissionLevel = PermissionLevel.READ
-    ): boolean {
-        const userLevel = userPermissions.permissions[permissionId];
-        if (!userLevel) return false;
-
-        const levels = [PermissionLevel.NONE, PermissionLevel.READ, PermissionLevel.WRITE, PermissionLevel.ADMIN];
-        const userLevelIndex = levels.indexOf(userLevel);
-        const requiredLevelIndex = levels.indexOf(requiredLevel);
-
-        return userLevelIndex >= requiredLevelIndex;
+    public static getInstance(): WalmartPermissionService {
+        if (!WalmartPermissionService.instance) {
+            WalmartPermissionService.instance = new WalmartPermissionService();
+        }
+        return WalmartPermissionService.instance;
     }
 
-    static hasAnyPermission(
-        userPermissions: UserPermissions,
-        permissionIds: string[],
-        requiredLevel: PermissionLevel = PermissionLevel.READ
-    ): boolean {
-        return permissionIds.some(permissionId =>
-            this.hasPermission(userPermissions, permissionId, requiredLevel)
-        );
+    constructor() {
+        this.initializePermissionContexts();
     }
 
-    static hasAllPermissions(
-        userPermissions: UserPermissions,
-        permissionIds: string[],
-        requiredLevel: PermissionLevel = PermissionLevel.READ
-    ): boolean {
-        return permissionIds.every(permissionId =>
-            this.hasPermission(userPermissions, permissionId, requiredLevel)
-        );
+    private initializePermissionContexts() {
+        this.permissionContexts.set(PermissionCategory.CAMERA, [
+            { feature: 'Barcode Scanning', reason: 'scan product barcodes for price checks and shopping', isRequired: true },
+            { feature: 'Photo Capture', reason: 'take photos of receipts and products', isRequired: false }
+        ]);
+
+        this.permissionContexts.set(PermissionCategory.LOCATION, [
+            { feature: 'Store Finder', reason: 'find nearby Walmart stores and get directions', isRequired: true },
+            { feature: 'Local Deals', reason: 'show location-specific deals and inventory', isRequired: false }
+        ]);
+
+        this.permissionContexts.set(PermissionCategory.LOCATION_BACKGROUND, [
+            { feature: 'Curbside Pickup', reason: 'notify when you arrive for pickup orders', isRequired: false },
+            { feature: 'Store Arrival', reason: 'automatically check you in when arriving at stores', isRequired: false }
+        ]);
+
+        this.permissionContexts.set(PermissionCategory.NOTIFICATIONS, [
+            { feature: 'Order Updates', reason: 'receive updates about your orders and deliveries', isRequired: false },
+            { feature: 'Deal Alerts', reason: 'get notified about sales and special offers', isRequired: false }
+        ]);
     }
 
-    static checkDependencies(
-        userPermissions: UserPermissions,
-        permission: Permission
-    ): boolean {
-        if (!permission.dependencies) return true;
-
-        return permission.dependencies.every(depId =>
-            this.hasPermission(userPermissions, depId)
-        );
-    }
-
-    static getPermissionsByCategory(
+    /**
+     * Request permission with contextual explanation
+     */
+    async requestPermissionWithContext(
         category: PermissionCategory,
-        permissions: Permission[] = DEFAULT_PERMISSIONS
-    ): Permission[] {
-        return permissions.filter(permission => permission.category === category);
+        featureName?: string
+    ): Promise<PermissionStatus> {
+        const contexts = this.permissionContexts.get(category) || [];
+        const context = featureName
+            ? contexts.find(c => c.feature === featureName)
+            : contexts[0];
+
+        if (context) {
+            const title = `${context.feature} Permission`;
+            const description = `To use ${context.feature}, Walmart needs permission to ${context.reason}.`;
+
+            return await this.requestPermissionWithExplanation(category, title, description);
+        }
+
+        return await this.requestPermissionByCategory(category);
     }
 
-    static getRolePermissions(roleId: string, roles: Role[] = DEFAULT_ROLES): string[] {
-        const role = roles.find(r => r.id === roleId);
-        return role ? role.permissions : [];
-    }
+    /**
+     * Request all essential permissions for Walmart app
+     */
+    async requestAllPermissions(): Promise<PermissionResult> {
+        const results: PermissionResult = {};
 
-    static getUserPermissionsFromRoles(roles: Role[]): Record<string, PermissionLevel> {
-        const permissions: Record<string, PermissionLevel> = {};
+        try {
+            // Camera permissions
+            const cameraResult = await Camera.requestCameraPermissionsAsync();
+            results['camera'] = {
+                granted: cameraResult.granted,
+                canAskAgain: cameraResult.canAskAgain,
+                status: cameraResult.status,
+            };
 
-        roles.forEach(role => {
-            role.permissions.forEach(permissionId => {
-                // If permission already exists, keep the higher level
-                const existingLevel = permissions[permissionId];
-                if (!existingLevel) {
-                    permissions[permissionId] = PermissionLevel.READ;
+            // Media library for saving photos
+            const mediaResult = await MediaLibrary.requestPermissionsAsync();
+            results['media'] = {
+                granted: mediaResult.granted,
+                canAskAgain: mediaResult.canAskAgain,
+                status: mediaResult.status,
+            };
+
+            // Location for store finder
+            const locationResult = await Location.requestForegroundPermissionsAsync();
+            results['location'] = {
+                granted: locationResult.granted,
+                canAskAgain: locationResult.canAskAgain,
+                status: locationResult.status,
+            };
+
+            // Background location for curbside pickup
+            if (locationResult.granted) {
+                try {
+                    const backgroundLocationResult = await Location.requestBackgroundPermissionsAsync();
+                    results['location_background'] = {
+                        granted: backgroundLocationResult.granted,
+                        canAskAgain: backgroundLocationResult.canAskAgain,
+                        status: backgroundLocationResult.status,
+                    };
+                } catch (error) {
+                    console.warn('Background location permission not available');
+                    results['location_background'] = { granted: false, status: 'unavailable' };
                 }
-            });
+            }
+
+            // Push notifications
+            const notificationResult = await Notifications.requestPermissionsAsync();
+            results['notifications'] = {
+                granted: notificationResult.granted,
+                canAskAgain: notificationResult.canAskAgain,
+                status: notificationResult.status,
+            };
+
+            // Contacts (optional)
+            try {
+                const contactsResult = await Contacts.requestPermissionsAsync();
+                results['contacts'] = {
+                    granted: contactsResult.granted,
+                    canAskAgain: contactsResult.canAskAgain,
+                    status: contactsResult.status,
+                };
+            } catch (error) {
+                console.warn('Contacts permission not available on this platform');
+                results['contacts'] = { granted: false, status: 'unavailable' };
+            }
+
+            // Calendar (optional)
+            try {
+                const calendarResult = await Calendar.requestCalendarPermissionsAsync();
+                results['calendar'] = {
+                    granted: calendarResult.granted,
+                    canAskAgain: calendarResult.canAskAgain,
+                    status: calendarResult.status,
+                };
+            } catch (error) {
+                console.warn('Calendar permission not available on this platform');
+                results['calendar'] = { granted: false, status: 'unavailable' };
+            }
+
+            return results;
+        } catch (error) {
+            console.error('Error requesting permissions:', error);
+            throw new Error('Failed to request permissions');
+        }
+    }
+
+    /**
+     * Request specific permission by category
+     */
+    async requestPermissionByCategory(category: PermissionCategory): Promise<PermissionStatus> {
+        switch (category) {
+            case PermissionCategory.CAMERA:
+                const cameraResult = await Camera.requestCameraPermissionsAsync();
+                return {
+                    granted: cameraResult.granted,
+                    canAskAgain: cameraResult.canAskAgain,
+                    status: cameraResult.status,
+                };
+
+            case PermissionCategory.LOCATION:
+                const locationResult = await Location.requestForegroundPermissionsAsync();
+                return {
+                    granted: locationResult.granted,
+                    canAskAgain: locationResult.canAskAgain,
+                    status: locationResult.status,
+                };
+
+            case PermissionCategory.LOCATION_BACKGROUND:
+                const backgroundLocationResult = await Location.requestBackgroundPermissionsAsync();
+                return {
+                    granted: backgroundLocationResult.granted,
+                    canAskAgain: backgroundLocationResult.canAskAgain,
+                    status: backgroundLocationResult.status,
+                };
+
+            case PermissionCategory.NOTIFICATIONS:
+                const notificationResult = await Notifications.requestPermissionsAsync();
+                return {
+                    granted: notificationResult.granted,
+                    canAskAgain: notificationResult.canAskAgain,
+                    status: notificationResult.status,
+                };
+
+            case PermissionCategory.BIOMETRICS:
+                const hasHardware = await LocalAuthentication.hasHardwareAsync();
+                const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+                return {
+                    granted: hasHardware && isEnrolled,
+                    status: hasHardware && isEnrolled ? 'granted' : 'denied',
+                };
+
+            case PermissionCategory.CONTACTS:
+                const contactsResult = await Contacts.requestPermissionsAsync();
+                return {
+                    granted: contactsResult.granted,
+                    canAskAgain: contactsResult.canAskAgain,
+                    status: contactsResult.status,
+                };
+
+            case PermissionCategory.CALENDAR:
+                const calendarResult = await Calendar.requestCalendarPermissionsAsync();
+                return {
+                    granted: calendarResult.granted,
+                    canAskAgain: calendarResult.canAskAgain,
+                    status: calendarResult.status,
+                };
+
+            default:
+                throw new Error(`Permission category ${category} not supported`);
+        }
+    }
+
+    /**
+     * Check current status of all permissions
+     */
+    async checkAllPermissions(): Promise<PermissionResult> {
+        const results: PermissionResult = {};
+
+        try {
+            // Camera
+            const cameraStatus = await Camera.getCameraPermissionsAsync();
+            results['camera'] = {
+                granted: cameraStatus.granted,
+                canAskAgain: cameraStatus.canAskAgain,
+                status: cameraStatus.status,
+            };
+
+            // Location
+            const locationStatus = await Location.getForegroundPermissionsAsync();
+            results['location'] = {
+                granted: locationStatus.granted,
+                canAskAgain: locationStatus.canAskAgain,
+                status: locationStatus.status,
+            };
+
+            // Background Location
+            const backgroundLocationStatus = await Location.getBackgroundPermissionsAsync();
+            results['location_background'] = {
+                granted: backgroundLocationStatus.granted,
+                canAskAgain: backgroundLocationStatus.canAskAgain,
+                status: backgroundLocationStatus.status,
+            };
+
+            // Media Library
+            const mediaStatus = await MediaLibrary.getPermissionsAsync();
+            results['media'] = {
+                granted: mediaStatus.granted,
+                canAskAgain: mediaStatus.canAskAgain,
+                status: mediaStatus.status,
+            };
+
+            // Notifications
+            const notificationStatus = await Notifications.getPermissionsAsync();
+            results['notifications'] = {
+                granted: notificationStatus.granted,
+                canAskAgain: notificationStatus.canAskAgain,
+                status: notificationStatus.status,
+            };
+
+            // Contacts
+            try {
+                const contactsStatus = await Contacts.getPermissionsAsync();
+                results['contacts'] = {
+                    granted: contactsStatus.granted,
+                    canAskAgain: contactsStatus.canAskAgain,
+                    status: contactsStatus.status,
+                };
+            } catch (error) {
+                results['contacts'] = { granted: false, status: 'unavailable' };
+            }
+
+            // Calendar
+            try {
+                const calendarStatus = await Calendar.getCalendarPermissionsAsync();
+                results['calendar'] = {
+                    granted: calendarStatus.granted,
+                    canAskAgain: calendarStatus.canAskAgain,
+                    status: calendarStatus.status,
+                };
+            } catch (error) {
+                results['calendar'] = { granted: false, status: 'unavailable' };
+            }
+
+            return results;
+        } catch (error) {
+            console.error('Error checking permissions:', error);
+            throw new Error('Failed to check permissions');
+        }
+    }
+
+    /**
+     * Show permission denied alert with guidance
+     */
+    showPermissionDeniedAlert(permissionName: string, reason: string) {
+        Alert.alert(
+            `${permissionName} Permission Required`,
+            `Walmart app needs ${permissionName.toLowerCase()} access to ${reason}. Please enable it in your device settings.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => this.openAppSettings() },
+            ]
+        );
+    }
+
+    /**
+     * Open device app settings
+     */
+    private async openAppSettings() {
+        try {
+            if (Platform.OS === 'ios') {
+                await Linking.openURL('app-settings:');
+            } else {
+                await Linking.openSettings();
+            }
+        } catch (error) {
+            console.error('Failed to open app settings:', error);
+            Alert.alert('Error', 'Unable to open settings. Please manually navigate to Settings > Apps > Walmart to manage permissions.');
+        }
+    }
+
+    /**
+     * Request permissions with user-friendly explanations
+     */
+    async requestPermissionWithExplanation(
+        category: PermissionCategory,
+        title: string,
+        description: string
+    ): Promise<PermissionStatus> {
+        return new Promise((resolve) => {
+            Alert.alert(
+                title,
+                description,
+                [
+                    {
+                        text: 'Not Now',
+                        style: 'cancel',
+                        onPress: () => resolve({ granted: false, status: 'denied' }),
+                    },
+                    {
+                        text: 'Allow',
+                        onPress: async () => {
+                            try {
+                                const result = await this.requestPermissionByCategory(category);
+                                resolve(result);
+                            } catch (error) {
+                                console.error(`Error requesting ${category} permission:`, error);
+                                resolve({ granted: false, status: 'error' });
+                            }
+                        },
+                    },
+                ]
+            );
         });
-
-        return permissions;
     }
 
-    static isPermissionExpired(grant: PermissionGrant): boolean {
-        if (!grant.expiresAt) return false;
-        return new Date(grant.expiresAt) < new Date();
+    /**
+     * Get critical permissions that are required for app to function
+     */
+    getCriticalPermissions(): PermissionCategory[] {
+        return [
+            PermissionCategory.CAMERA, // For barcode scanning
+            PermissionCategory.LOCATION, // For store finder
+        ];
     }
 
-    static getActivePermissions(grants: PermissionGrant[]): PermissionGrant[] {
-        return grants.filter(grant => grant.isActive && !this.isPermissionExpired(grant));
+    /**
+     * Get optional permissions that enhance user experience
+     */
+    getOptionalPermissions(): PermissionCategory[] {
+        return [
+            PermissionCategory.LOCATION_BACKGROUND,
+            PermissionCategory.NOTIFICATIONS,
+            PermissionCategory.CONTACTS,
+            PermissionCategory.CALENDAR,
+            PermissionCategory.BIOMETRICS,
+        ];
     }
 
-    static canRequestPermission(
-        userPermissions: UserPermissions,
-        permissionId: string,
-        requestedLevel: PermissionLevel
-    ): boolean {
-        const currentLevel = userPermissions.permissions[permissionId];
-        if (!currentLevel) return true;
+    /**
+     * Check if all critical permissions are granted
+     */
+    async areCriticalPermissionsGranted(): Promise<boolean> {
+        const criticalPermissions = this.getCriticalPermissions();
+        const results = await this.checkAllPermissions();
 
-        const levels = [PermissionLevel.NONE, PermissionLevel.READ, PermissionLevel.WRITE, PermissionLevel.ADMIN];
-        const currentLevelIndex = levels.indexOf(currentLevel);
-        const requestedLevelIndex = levels.indexOf(requestedLevel);
+        return criticalPermissions.every(permission => {
+            const key = permission.toLowerCase();
+            return results[key]?.granted ?? false;
+        });
+    }
 
-        // Can only request higher levels
-        return requestedLevelIndex > currentLevelIndex;
+    /**
+     * Request only critical permissions with context
+     */
+    async requestCriticalPermissions(): Promise<boolean> {
+        const criticalPermissions = this.getCriticalPermissions();
+        const results: boolean[] = [];
+
+        for (const permission of criticalPermissions) {
+            try {
+                const result = await this.requestPermissionWithContext(permission);
+                results.push(result.granted);
+            } catch (error) {
+                console.error(`Failed to request ${permission} permission:`, error);
+                results.push(false);
+            }
+        }
+
+        return results.every(granted => granted);
+    }
+
+    /**
+     * Setup permissions on app first launch
+     */
+    async setupInitialPermissions(): Promise<{
+        critical: boolean;
+        optional: PermissionResult;
+    }> {
+        // Request critical permissions first with context
+        const criticalGranted = await this.requestCriticalPermissions();
+
+        if (!criticalGranted) {
+            Alert.alert(
+                'Essential Permissions Required',
+                'Walmart app needs camera and location permissions to provide core features like barcode scanning and store finding. Please grant these permissions to continue using the app.',
+                [{ text: 'OK' }]
+            );
+        }
+
+        // Request optional permissions with context
+        const optionalResults: PermissionResult = {};
+        const optionalPermissions = this.getOptionalPermissions();
+
+        for (const permission of optionalPermissions) {
+            try {
+                const result = await this.requestPermissionWithContext(permission);
+                optionalResults[permission.toLowerCase()] = result;
+            } catch (error) {
+                console.warn(`Optional permission ${permission} failed:`, error);
+                optionalResults[permission.toLowerCase()] = { granted: false, status: 'error' };
+            }
+        }
+
+        return {
+            critical: criticalGranted,
+            optional: optionalResults,
+        };
+    }
+
+    /**
+     * Request permission at the point of use
+     */
+    async requestJustInTimePermission(
+        category: PermissionCategory,
+        featureName: string
+    ): Promise<boolean> {
+        try {
+            // First check if we already have permission
+            const currentStatus = await this.checkPermissionStatus(category);
+            if (currentStatus.granted) {
+                return true;
+            }
+
+            // If we can't ask again, show settings alert
+            if (currentStatus.canAskAgain === false) {
+                const contexts = this.permissionContexts.get(category) || [];
+                const context = contexts.find(c => c.feature === featureName);
+                if (context) {
+                    this.showPermissionDeniedAlert(featureName, context.reason);
+                }
+                return false;
+            }
+
+            // Request permission with context
+            const result = await this.requestPermissionWithContext(category, featureName);
+            return result.granted;
+        } catch (error) {
+            console.error(`Failed to request just-in-time permission for ${category}:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Check status of a specific permission
+     */
+    async checkPermissionStatus(category: PermissionCategory): Promise<PermissionStatus> {
+        const allPermissions = await this.checkAllPermissions();
+        const key = category.toLowerCase();
+        return allPermissions[key] || { granted: false, status: 'undetermined' };
     }
 }
 
-export default PermissionManager;
+// Export singleton instance
+export const permissionService = WalmartPermissionService.getInstance();
+
+// Enhanced utility function
+export const requestAllPermissions = async (): Promise<boolean> => {
+    try {
+        const results = await permissionService.requestAllPermissions();
+
+        // Check if all critical permissions are granted
+        const criticalPermissions = ['camera', 'location'];
+        const criticalGranted = criticalPermissions.every(permission =>
+            results[permission]?.granted ?? false
+        );
+
+        if (!criticalGranted) {
+            console.warn('Critical permissions not granted:', results);
+        }
+
+        return criticalGranted;
+    } catch (error) {
+        console.error('Failed to request all permissions:', error);
+        return false;
+    }
+};
+
+// Utility function for just-in-time permission requests
+export const requestFeaturePermission = async (
+    feature: 'barcode-scan' | 'store-finder' | 'curbside-pickup' | 'notifications' | 'photo-capture'
+): Promise<boolean> => {
+    const featurePermissionMap: Record<string, { category: PermissionCategory; name: string }> = {
+        'barcode-scan': { category: PermissionCategory.CAMERA, name: 'Barcode Scanning' },
+        'store-finder': { category: PermissionCategory.LOCATION, name: 'Store Finder' },
+        'curbside-pickup': { category: PermissionCategory.LOCATION_BACKGROUND, name: 'Curbside Pickup' },
+        'notifications': { category: PermissionCategory.NOTIFICATIONS, name: 'Order Updates' },
+        'photo-capture': { category: PermissionCategory.CAMERA, name: 'Photo Capture' },
+    };
+
+    const mapping = featurePermissionMap[feature];
+    if (!mapping) {
+        console.error(`Unknown feature: ${feature}`);
+        return false;
+    }
+
+    return await permissionService.requestJustInTimePermission(mapping.category, mapping.name);
+};

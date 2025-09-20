@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -15,6 +15,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Camera } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { permissionService } from '../../services/api/permissionService';
+import { PermissionCategory } from '../../utils/permissions';
+import asyncStorage, { STORAGE_KEYS } from '../../services/storage/asyncStorage';
 
 const COLORS = {
     walmartBlue: '#0071CE',
@@ -76,6 +82,26 @@ export default function EditProfileScreen() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [activeSection, setActiveSection] = useState<string | null>(null);
 
+    // Debug permissions on component mount
+    useEffect(() => {
+        const debugPermissions = async () => {
+            try {
+                const perms = await permissionService.checkAllPermissions();
+                console.log('Current permissions:', perms);
+
+                // Also check individual permissions
+                const cameraStatus = await Camera.getCameraPermissionsAsync();
+                const mediaStatus = await MediaLibrary.getPermissionsAsync();
+
+                console.log('Camera permission:', cameraStatus);
+                console.log('Media permission:', mediaStatus);
+            } catch (error) {
+                console.error('Permission debug error:', error);
+            }
+        };
+        debugPermissions();
+    }, []);
+
     const handleInputChange = (field: string, value: string | boolean, section?: string) => {
         setHasUnsavedChanges(true);
 
@@ -95,21 +121,32 @@ export default function EditProfileScreen() {
         }
     };
 
-    const handleSave = () => {
-        // TODO: Implement save logic
-        Alert.alert(
-            'Profile Updated',
-            'Your profile information has been saved successfully!',
-            [
-                {
-                    text: 'OK',
-                    onPress: () => {
-                        setHasUnsavedChanges(false);
-                        router.back();
-                    }
-                }
-            ]
-        );
+    const handleSave = async () => {
+        try {
+            // Save to AsyncStorage using your existing storage service
+            const success = await asyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, userData);
+
+            if (success) {
+                Alert.alert(
+                    'Profile Updated',
+                    'Your profile information has been saved successfully!',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: () => {
+                                setHasUnsavedChanges(false);
+                                router.back();
+                            }
+                        }
+                    ]
+                );
+            } else {
+                throw new Error('Failed to save to storage');
+            }
+        } catch (error) {
+            console.error('Error saving profile:', error);
+            Alert.alert('Error', 'Failed to save profile. Please try again.');
+        }
     };
 
     const handleCancel = () => {
@@ -130,6 +167,78 @@ export default function EditProfileScreen() {
     const handleAvatarSelect = (avatar: string) => {
         handleInputChange('profileImage', avatar);
         setShowAvatarModal(false);
+    };
+
+    const handleTakePhoto = async () => {
+        try {
+            // Request camera permission first
+            const cameraResult = await permissionService.requestPermissionByCategory(PermissionCategory.CAMERA);
+
+            if (!cameraResult.granted) {
+                Alert.alert('Camera Permission Required', 'Please allow camera access to take photos');
+                return;
+            }
+
+            // Request media library permission for FILES category (which maps to MediaLibrary)
+            const mediaResult = await permissionService.requestPermissionByCategory(PermissionCategory.FILES);
+
+            if (!mediaResult.granted) {
+                Alert.alert('Media Library Permission Required', 'Please allow media access to save photos');
+                return;
+            }
+
+            // Show options for camera or photo library
+            Alert.alert(
+                'Select Photo',
+                'Choose how you would like to select a photo',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Take Photo', onPress: openCamera },
+                    { text: 'Choose from Library', onPress: openImagePicker },
+                ]
+            );
+        } catch (error) {
+            console.error('Error handling photo selection:', error);
+            Alert.alert('Error', 'Failed to access camera or photo library');
+        }
+    };
+
+    const openCamera = async () => {
+        try {
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                handleInputChange('profileImage', result.assets[0].uri);
+                setShowAvatarModal(false);
+            }
+        } catch (error) {
+            console.error('Error opening camera:', error);
+            Alert.alert('Error', 'Failed to open camera');
+        }
+    };
+
+    const openImagePicker = async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: 'images',
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets && result.assets[0]) {
+                handleInputChange('profileImage', result.assets[0].uri);
+                setShowAvatarModal(false);
+            }
+        } catch (error) {
+            console.error('Error opening image picker:', error);
+            Alert.alert('Error', 'Failed to open photo library');
+        }
     };
 
     const formatPhoneNumber = (phone: string) => {
@@ -421,7 +530,7 @@ export default function EditProfileScreen() {
                                 </TouchableOpacity>
                             ))}
                         </View>
-                        <TouchableOpacity style={styles.cameraButton}>
+                        <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto}>
                             <Ionicons name="camera" size={20} color={COLORS.walmartBlue} />
                             <Text style={styles.cameraButtonText}>Take Photo</Text>
                         </TouchableOpacity>

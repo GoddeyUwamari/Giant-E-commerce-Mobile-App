@@ -8,88 +8,38 @@ import {
     Alert,
     ActivityIndicator,
     Share,
+    StyleSheet,
     Linking,
     RefreshControl,
-    StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { format, isAfter, isBefore, addDays } from 'date-fns';
+import { format } from 'date-fns';
 
-// Import unified systems
-import { getImageById } from '../../assets/images/imageLoader';
+// Import real order system
 import { useCartStore } from '../../store/slices/cartSlice';
-import { ALL_PRODUCTS } from '../../constants/products';
+import { orderStorage } from '../../services/storage/asyncStorage';
+import OrderCreationService from '../../services/orderCreation/OrderCreationService';
+import { ALL_PRODUCTS } from '../../constants/products/data';
+import type { Order, OrderItem as APIOrderItem, OrderStatus } from '../../services/api/orders';
 
-interface OrderItem {
-    id: string;
-    productId: string;
-    name: string;
-    price: number;
-    originalPrice?: number;
-    imageId?: string | number; // Changed from image string to imageId
-    quantity: number;
-    seller: string;
-    size?: string;
-    color?: string;
-    sku?: string;
-    variant?: any;
-}
-
-interface TrackingEvent {
-    id: string;
-    status: string;
-    description: string;
-    location: string;
-    timestamp: Date;
-    isCompleted: boolean;
-}
-
-interface OrderDetails {
-    id: string;
-    orderNumber: string;
-    status: 'confirmed' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'returned';
-    items: OrderItem[];
-    subtotal: number;
-    shipping: number;
-    tax: number;
-    discount: number;
-    total: number;
-    paymentMethod: string;
-    estimatedDelivery: Date;
-    actualDelivery?: Date;
-    shippingAddress: {
-        name: string;
-        street: string;
-        apartment?: string;
-        city: string;
-        state: string;
-        zipCode: string;
-        phone: string;
-    };
-    billingAddress: {
-        name: string;
-        street: string;
-        city: string;
-        state: string;
-        zipCode: string;
-    };
-    createdAt: Date;
-    trackingNumber?: string;
-    carrier?: string;
-    trackingEvents: TrackingEvent[];
-    canCancel: boolean;
-    canReturn: boolean;
-    returnDeadline?: Date;
-}
+// Helper function for product images
+const getImageById = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
+};
 
 export default function OrderDetailsPage(): JSX.Element {
     const { orderId } = useLocalSearchParams<{ orderId: string }>();
-    const [orderDetails, setOrderDetails] = useState<OrderDetails | null>(null);
+    const [order, setOrder] = useState<Order | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Cart store for reorder functionality
     const addItem = useCartStore((state) => state.addItem);
@@ -98,170 +48,59 @@ export default function OrderDetailsPage(): JSX.Element {
         loadOrderDetails();
     }, [orderId]);
 
-    // Enhanced order loading with product data integration
     const loadOrderDetails = async () => {
         try {
             setIsLoading(true);
+            setError(null);
 
-            // TODO: Replace with actual API call
-            const response = await fetch(`/api/orders/${orderId}`);
-            if (!response.ok) {
-                throw new Error('Order not found');
+            let loadedOrder: Order | null = null;
+
+            // Priority 1: Use orderId from params if provided and valid
+            if (orderId && orderId !== 'undefined') {
+                console.log('Loading order by ID:', orderId);
+                try {
+                    loadedOrder = await OrderCreationService.getOrderById(orderId);
+                } catch (error) {
+                    console.warn('Failed to load order by ID:', error);
+                }
             }
-            const orderData = await response.json();
 
-            // Enhance order items with product data from unified system
-            const enhancedItems = orderData.items.map((item: OrderItem) => {
-                const productData = ALL_PRODUCTS.find(p => p.id === item.productId);
+            // Priority 2: Get current order from storage if no orderId or failed
+            if (!loadedOrder) {
+                console.log('Loading current order from storage...');
+                try {
+                    loadedOrder = await orderStorage.getCurrentOrder();
+                } catch (error) {
+                    console.warn('Failed to load current order:', error);
+                }
+            }
 
-                return {
-                    ...item,
-                    // Use product image ID if available, fallback to item imageId or productId
-                    imageId: item.imageId || productData?.id || item.productId,
-                    // Enhance with product data if available
-                    name: item.name || productData?.name || 'Unknown Product',
-                    seller: item.seller || productData?.brand || 'Walmart',
-                    sku: item.sku || productData?.sku || `SKU-${item.productId}`,
-                };
-            });
+            // Priority 3: Get latest order ID from storage
+            if (!loadedOrder) {
+                console.log('Loading latest order by ID...');
+                try {
+                    const latestOrderId = await orderStorage.getLatestOrderId();
+                    if (latestOrderId) {
+                        loadedOrder = await OrderCreationService.getOrderById(latestOrderId);
+                    }
+                } catch (error) {
+                    console.warn('Failed to load latest order:', error);
+                }
+            }
 
-            setOrderDetails({
-                ...orderData,
-                items: enhancedItems,
-                // Ensure dates are Date objects
-                estimatedDelivery: new Date(orderData.estimatedDelivery),
-                actualDelivery: orderData.actualDelivery ? new Date(orderData.actualDelivery) : undefined,
-                createdAt: new Date(orderData.createdAt),
-                returnDeadline: orderData.returnDeadline ? new Date(orderData.returnDeadline) : undefined,
-                trackingEvents: orderData.trackingEvents.map((event: any) => ({
-                    ...event,
-                    timestamp: new Date(event.timestamp)
-                }))
-            });
+            if (loadedOrder) {
+                setOrder(loadedOrder);
+                console.log('✅ Order loaded successfully:', loadedOrder.id);
+            } else {
+                throw new Error('No order found');
+            }
 
         } catch (error) {
-            console.error('Error loading order details:', error);
-
-            // For development: Generate sample order if API fails
-            if (__DEV__) {
-                const sampleOrder = generateSampleOrder(orderId);
-                setOrderDetails(sampleOrder);
-            } else {
-                Alert.alert('Error', 'Failed to load order details');
-            }
+            console.error('❌ Error loading order details:', error);
+            setError('Failed to load order details. Please try again.');
         } finally {
             setIsLoading(false);
         }
-    };
-
-    // Development helper: Generate sample order using real product data
-    const generateSampleOrder = (id: string): OrderDetails => {
-        const sampleProducts = ALL_PRODUCTS.slice(0, 3); // Use first 3 products
-
-        const items: OrderItem[] = sampleProducts.map((product, index) => ({
-            id: `item_${index + 1}`,
-            productId: product.id,
-            name: product.name,
-            price: product.price,
-            originalPrice: product.originalPrice,
-            imageId: product.id, // Use product ID for image loading
-            quantity: index === 0 ? 2 : 1,
-            seller: product.brand || 'Walmart',
-            sku: product.sku,
-            color: product.variants?.colors?.[0]?.name,
-            size: product.variants?.sizes?.[0]?.name,
-        }));
-
-        const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const tax = subtotal * 0.08;
-        const shipping = subtotal > 35 ? 0 : 7.95;
-        const discount = 0;
-
-        return {
-            id,
-            orderNumber: `WM-2025-${Math.floor(Math.random() * 100000).toString().padStart(6, '0')}`,
-            status: 'shipped',
-            items,
-            subtotal,
-            shipping,
-            tax,
-            discount,
-            total: subtotal + tax + shipping - discount,
-            paymentMethod: 'Visa •••• 4242',
-            estimatedDelivery: addDays(new Date(), 2),
-            shippingAddress: {
-                name: 'John Doe',
-                street: '123 Main Street',
-                apartment: 'Apt 4B',
-                city: 'New York',
-                state: 'NY',
-                zipCode: '10001',
-                phone: '+1 (555) 123-4567',
-            },
-            billingAddress: {
-                name: 'John Doe',
-                street: '123 Main Street',
-                city: 'New York',
-                state: 'NY',
-                zipCode: '10001',
-            },
-            createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // Yesterday
-            trackingNumber: `TRK${Math.floor(Math.random() * 1000000000)}`,
-            carrier: 'FedEx',
-            trackingEvents: [
-                {
-                    id: '1',
-                    status: 'Order Placed',
-                    description: 'Your order has been confirmed and is being prepared',
-                    location: 'Walmart Fulfillment Center',
-                    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
-                    isCompleted: true,
-                },
-                {
-                    id: '2',
-                    status: 'Processing',
-                    description: 'Items are being picked and packed',
-                    location: 'Walmart Fulfillment Center',
-                    timestamp: new Date(Date.now() - 20 * 60 * 60 * 1000),
-                    isCompleted: true,
-                },
-                {
-                    id: '3',
-                    status: 'Shipped',
-                    description: 'Your package has been picked up by the carrier',
-                    location: 'Walmart Fulfillment Center',
-                    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
-                    isCompleted: true,
-                },
-                {
-                    id: '4',
-                    status: 'In Transit',
-                    description: 'Package is on its way to the destination facility',
-                    location: 'FedEx Hub - Newark, NJ',
-                    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-                    isCompleted: true,
-                },
-                {
-                    id: '5',
-                    status: 'Out for Delivery',
-                    description: 'Package is loaded on delivery vehicle',
-                    location: 'FedEx Facility - New York, NY',
-                    timestamp: new Date(),
-                    isCompleted: false,
-                },
-                {
-                    id: '6',
-                    status: 'Delivered',
-                    description: 'Package has been delivered',
-                    location: 'New York, NY 10001',
-                    timestamp: addDays(new Date(), 1),
-                    isCompleted: false,
-                },
-            ],
-            canCancel: false,
-            canReturn: true,
-            returnDeadline: addDays(new Date(), 30),
-        };
     };
 
     const onRefresh = async () => {
@@ -271,29 +110,34 @@ export default function OrderDetailsPage(): JSX.Element {
     };
 
     const handleTrackPackage = () => {
-        if (orderDetails?.trackingNumber && orderDetails?.carrier) {
+        if (order?.tracking?.trackingNumber) {
+            const trackingNumber = order.tracking.trackingNumber;
+            const carrier = order.shipping.method.carrier.toLowerCase();
+
             let trackingUrl = '';
-            switch (orderDetails.carrier.toLowerCase()) {
+            switch (carrier) {
                 case 'fedex':
-                    trackingUrl = `https://www.fedex.com/fedextrack/?tracknumbers=${orderDetails.trackingNumber}`;
+                    trackingUrl = `https://www.fedex.com/fedextrack/?tracknumbers=${trackingNumber}`;
                     break;
                 case 'ups':
-                    trackingUrl = `https://www.ups.com/track?track=yes&trackNums=${orderDetails.trackingNumber}`;
+                    trackingUrl = `https://www.ups.com/track?track=yes&trackNums=${trackingNumber}`;
                     break;
                 case 'usps':
-                    trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=${orderDetails.trackingNumber}`;
+                    trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=${trackingNumber}`;
                     break;
                 default:
-                    Alert.alert('Tracking', `Tracking Number: ${orderDetails.trackingNumber}`);
+                    Alert.alert('Tracking', `Tracking Number: ${trackingNumber}`);
                     return;
             }
             Linking.openURL(trackingUrl);
+        } else {
+            Alert.alert('Tracking', 'Tracking information will be available once your order ships.');
         }
     };
 
     const handleCancelOrder = async () => {
-        if (!orderDetails?.canCancel) {
-            Alert.alert('Cannot Cancel', 'This order cannot be cancelled as it has already been shipped.');
+        if (!order || !canCancelOrder()) {
+            Alert.alert('Cannot Cancel', 'This order cannot be cancelled as it has already been processed or shipped.');
             return;
         }
 
@@ -307,17 +151,8 @@ export default function OrderDetailsPage(): JSX.Element {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            const response = await fetch(`/api/orders/${orderId}/cancel`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                            });
-
-                            if (!response.ok) {
-                                throw new Error('Failed to cancel order');
-                            }
-
                             Alert.alert('Success', 'Your order has been cancelled. Refund will be processed within 3-5 business days.');
-                            await loadOrderDetails(); // Refresh order details
+                            await loadOrderDetails();
                         } catch (error) {
                             console.error('Cancel order error:', error);
                             Alert.alert('Error', 'Failed to cancel order. Please contact support.');
@@ -329,7 +164,7 @@ export default function OrderDetailsPage(): JSX.Element {
     };
 
     const handleReturnItems = () => {
-        if (!orderDetails?.canReturn) {
+        if (!order || !canReturnOrder()) {
             Alert.alert('Cannot Return', 'The return window for this order has expired.');
             return;
         }
@@ -337,7 +172,7 @@ export default function OrderDetailsPage(): JSX.Element {
     };
 
     const handleReorder = async () => {
-        if (!orderDetails?.items) return;
+        if (!order?.items) return;
 
         Alert.alert(
             'Reorder Items',
@@ -348,33 +183,29 @@ export default function OrderDetailsPage(): JSX.Element {
                     text: 'Add to Cart',
                     onPress: async () => {
                         try {
-                            // Add each order item to cart using the cart store
-                            for (const item of orderDetails.items) {
+                            for (const item of order.items) {
                                 const productData = ALL_PRODUCTS.find(p => p.id === item.productId);
 
                                 await addItem({
                                     productId: item.productId,
                                     name: item.name,
-                                    brand: item.seller,
+                                    brand: item.brand || item.seller.name,
                                     price: item.price,
                                     originalPrice: item.originalPrice,
                                     quantity: item.quantity,
                                     maxQuantity: productData?.maxQuantity || 10,
                                     minQuantity: productData?.minQuantity || 1,
-                                    image: item.imageId || item.productId,
-                                    category: productData?.category || 'general',
-                                    sku: item.sku || `SKU-${item.productId}`,
-                                    status: productData?.status || 'available',
-                                    storeId: productData?.storeId || 'store_001',
-                                    storeName: productData?.storeName || 'Walmart Supercenter',
-                                    delivery: productData?.delivery || {
-                                        option: 'pickup' as const,
+                                    image: item.image,
+                                    category: item.category,
+                                    sku: item.sku,
+                                    status: 'available',
+                                    storeId: item.seller.id,
+                                    storeName: item.seller.name,
+                                    delivery: {
+                                        option: 'pickup',
                                         freeShippingEligible: true,
                                     },
-                                    variant: item.variant || {
-                                        color: item.color,
-                                        size: item.size,
-                                    },
+                                    variant: item.variants || {},
                                 });
                             }
 
@@ -393,42 +224,22 @@ export default function OrderDetailsPage(): JSX.Element {
     const handleContactSupport = () => {
         Alert.alert(
             'Contact Support',
-            `Need help with order ${orderDetails?.orderNumber}?`,
+            `Need help with order ${order?.orderNumber}?`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Call',
-                    onPress: () => {
-                        Linking.openURL('tel:1-800-925-6278').catch(() => {
-                            Alert.alert(
-                                'Call Support',
-                                '📞 1-800-925-6278\n\n(Phone dialer not available in simulator)',
-                                [
-                                    { text: 'Copy Number', onPress: () => Alert.alert('Number', '1-800-925-6278') },
-                                    { text: 'OK', style: 'cancel' }
-                                ]
-                            );
-                        });
-                    }
+                    onPress: () => Linking.openURL('tel:1-800-925-6278')
                 },
                 {
-                    text: 'Chat',
-                    onPress: () => router.push('/support/chat')
+                    text: 'Live Chat',
+                    onPress: () => router.push('/(modals)/support-chat')
                 },
                 {
                     text: 'Email',
                     onPress: () => {
-                        const emailUrl = `mailto:support@walmart.com?subject=Order%20Support%20-%20${orderDetails?.orderNumber}`;
-                        Linking.openURL(emailUrl).catch(() => {
-                            Alert.alert(
-                                'Email Support',
-                                '📧 support@walmart.com\n\nSubject: Order Support - ' + orderDetails?.orderNumber,
-                                [
-                                    { text: 'Copy Email', onPress: () => Alert.alert('Email', 'support@walmart.com') },
-                                    { text: 'OK', style: 'cancel' }
-                                ]
-                            );
-                        });
+                        const emailUrl = `mailto:support@walmart.com?subject=Order%20Support%20-%20${order?.orderNumber}`;
+                        Linking.openURL(emailUrl);
                     }
                 },
             ]
@@ -436,20 +247,20 @@ export default function OrderDetailsPage(): JSX.Element {
     };
 
     const shareOrder = async () => {
-        if (!orderDetails) return;
+        if (!order) return;
 
         setIsSharing(true);
         try {
-            const message = `📦 Order Update - ${orderDetails.orderNumber}
+            const message = `📦 Order Update - ${order.orderNumber}
 
-Status: ${orderDetails.status.replace('_', ' ').toUpperCase()}
-Items: ${orderDetails.items.length}
-Total: $${orderDetails.total.toFixed(2)}
+Status: ${getStatusDisplayText(order.status)}
+Items: ${order.items.length}
+Total: $${order.summary.total.toFixed(2)}
 
-${orderDetails.trackingNumber ? `Tracking: ${orderDetails.trackingNumber}` : ''}
-Estimated Delivery: ${format(orderDetails.estimatedDelivery, 'EEEE, MMMM do')}
+${order.tracking?.trackingNumber ? `Tracking: ${order.tracking.trackingNumber}` : ''}
+${order.expectedDeliveryDate ? `Estimated Delivery: ${format(new Date(order.expectedDeliveryDate), 'EEEE, MMMM do')}` : ''}
 
-Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
+Track your order: https://walmart.com/track/${order.orderNumber}`;
 
             await Share.share({
                 message,
@@ -462,42 +273,135 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
         }
     };
 
-    // Enhanced image loading function using smart image loader
-    const getOrderItemImage = (item: OrderItem) => {
-        try {
-            // Use smart image loading system
-            return getImageById(item.imageId || item.productId, 'medium');
-        } catch (error) {
-            console.warn(`Failed to load image for item ${item.id}:`, error);
-            // Ultimate fallback to product ID
-            return getImageById(1, 'medium');
+    // Utility functions
+    const getStatusDisplayText = (status: OrderStatus): string => {
+        switch (status) {
+            case 'pending': return 'Pending';
+            case 'confirmed': return 'Confirmed';
+            case 'processing': return 'Processing';
+            case 'picking': return 'Being Picked';
+            case 'packed': return 'Packed';
+            case 'shipped': return 'Shipped';
+            case 'out_for_delivery': return 'Out for Delivery';
+            case 'delivered': return 'Delivered';
+            case 'cancelled': return 'Cancelled';
+            case 'returned': return 'Returned';
+            case 'refunded': return 'Refunded';
+            case 'failed': return 'Failed';
+            default: return status;
         }
     };
 
-    const getStatusBadgeStyle = (status: string) => {
+    const getStatusBadgeStyle = (status: OrderStatus) => {
         switch (status) {
+            case 'pending':
             case 'confirmed': return { backgroundColor: '#DBEAFE', color: '#2563EB' };
-            case 'processing': return { backgroundColor: '#FEF3C7', color: '#D97706' };
+            case 'processing':
+            case 'picking': return { backgroundColor: '#FEF3C7', color: '#D97706' };
+            case 'packed':
             case 'shipped': return { backgroundColor: '#EDE9FE', color: '#7C3AED' };
             case 'out_for_delivery': return { backgroundColor: '#FED7AA', color: '#EA580C' };
             case 'delivered': return { backgroundColor: '#D1FAE5', color: '#059669' };
-            case 'cancelled': return { backgroundColor: '#FEE2E2', color: '#DC2626' };
-            case 'returned': return { backgroundColor: '#F3F4F6', color: '#6B7280' };
+            case 'cancelled':
+            case 'failed': return { backgroundColor: '#FEE2E2', color: '#DC2626' };
+            case 'returned':
+            case 'refunded': return { backgroundColor: '#F3F4F6', color: '#6B7280' };
             default: return { backgroundColor: '#F3F4F6', color: '#6B7280' };
         }
     };
 
-    const getStatusIcon = (status: string) => {
+    const getStatusIcon = (status: OrderStatus) => {
         switch (status) {
+            case 'pending':
             case 'confirmed': return 'checkmark-circle';
-            case 'processing': return 'time';
+            case 'processing':
+            case 'picking': return 'time';
+            case 'packed': return 'cube';
             case 'shipped': return 'car';
             case 'out_for_delivery': return 'bicycle';
             case 'delivered': return 'home';
             case 'cancelled': return 'close-circle';
             case 'returned': return 'return-up-back';
+            case 'refunded': return 'card';
+            case 'failed': return 'alert-circle';
             default: return 'ellipse';
         }
+    };
+
+    const getOrderItemImage = (item: APIOrderItem) => {
+        try {
+            if (typeof item.image === 'string' && item.image.startsWith('http')) {
+                return { uri: item.image };
+            }
+
+            if (typeof item.image === 'object' && item.image?.uri) {
+                return item.image;
+            }
+
+            const product = ALL_PRODUCTS.find(p => p.id === item.productId);
+            if (product?.image) {
+                return { uri: product.image };
+            }
+
+            return getImageById(item.productId, 'medium');
+        } catch (error) {
+            console.warn('Error loading image:', error);
+            return getImageById(1, 'medium');
+        }
+    };
+
+    const getVariantText = (item: APIOrderItem): string => {
+        if (!item.variants) return '';
+
+        const variantPairs = Object.entries(item.variants)
+            .filter(([key, value]) => value && value.toString().trim())
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(', ');
+
+        return variantPairs;
+    };
+
+    const getPaymentMethodDisplay = (): string => {
+        if (!order) return 'Payment Method';
+
+        const { method } = order.payment;
+
+        if (method.type === 'credit_card' || method.type === 'debit_card') {
+            const brand = method.cardBrand ? method.cardBrand.charAt(0).toUpperCase() + method.cardBrand.slice(1) : 'Card';
+            const lastFour = method.lastFourDigits || '0000';
+            return `${brand} •••• ${lastFour}`;
+        }
+
+        switch (method.type) {
+            case 'paypal': return 'PayPal';
+            case 'apple_pay': return 'Apple Pay';
+            case 'google_pay': return 'Google Pay';
+            case 'walmart_pay': return 'Walmart Pay';
+            case 'gift_card': return 'Gift Card';
+            default: return 'Payment Method';
+        }
+    };
+
+    const canCancelOrder = (): boolean => {
+        if (!order) return false;
+        return ['pending', 'confirmed', 'processing'].includes(order.status);
+    };
+
+    const canReturnOrder = (): boolean => {
+        if (!order) return false;
+        return ['delivered'].includes(order.status);
+    };
+
+    const formatAddress = (address: typeof order.shipping.address) => {
+        if (!address) return {};
+        return {
+            name: `${address.firstName} ${address.lastName}`,
+            street: `${address.address1}${address.address2 ? `, ${address.address2}` : ''}`,
+            city: address.city,
+            state: address.state,
+            zipCode: address.zipCode,
+            phone: address.phone || '',
+        };
     };
 
     if (isLoading) {
@@ -509,13 +413,13 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
         );
     }
 
-    if (!orderDetails) {
+    if (error || !order) {
         return (
             <SafeAreaView style={styles.errorContainer}>
                 <Ionicons name="alert-circle" size={48} color="#E74C3C" />
                 <Text style={styles.errorTitle}>Order Not Found</Text>
                 <Text style={styles.errorMessage}>
-                    The order you're looking for doesn't exist or has been removed.
+                    {error || 'The order you\'re looking for doesn\'t exist or has been removed.'}
                 </Text>
                 <TouchableOpacity
                     style={styles.errorButton}
@@ -526,6 +430,9 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
             </SafeAreaView>
         );
     }
+
+    const formattedShippingAddress = formatAddress(order.shipping.address);
+    const formattedBillingAddress = formatAddress(order.billing.address);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -541,7 +448,7 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                     <View style={styles.headerTitleContainer}>
                         <Text style={styles.headerTitle}>Order Details</Text>
                         <Text style={styles.headerSubtitle}>
-                            {orderDetails.orderNumber}
+                            {order.orderNumber}
                         </Text>
                     </View>
                     <TouchableOpacity
@@ -569,38 +476,40 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                 <View style={styles.statusCard}>
                     <View style={styles.statusHeader}>
                         <Text style={styles.sectionTitle}>Order Status</Text>
-                        <View style={[styles.statusBadge, getStatusBadgeStyle(orderDetails.status)]}>
+                        <View style={[styles.statusBadge, getStatusBadgeStyle(order.status)]}>
                             <View style={styles.statusBadgeContent}>
                                 <Ionicons
-                                    name={getStatusIcon(orderDetails.status) as any}
+                                    name={getStatusIcon(order.status) as any}
                                     size={16}
-                                    color={getStatusBadgeStyle(orderDetails.status).color}
+                                    color={getStatusBadgeStyle(order.status).color}
                                 />
-                                <Text style={[styles.statusBadgeText, { color: getStatusBadgeStyle(orderDetails.status).color }]}>
-                                    {orderDetails.status.replace('_', ' ')}
+                                <Text style={[styles.statusBadgeText, { color: getStatusBadgeStyle(order.status).color }]}>
+                                    {getStatusDisplayText(order.status)}
                                 </Text>
                             </View>
                         </View>
                     </View>
 
                     <View style={styles.deliveryInfo}>
-                        <View style={styles.deliveryRow}>
-                            <Text style={styles.deliveryLabel}>
-                                {orderDetails.status === 'delivered' ? 'Delivered' : 'Estimated Delivery'}
-                            </Text>
-                            <Text style={styles.deliveryDate}>
-                                {orderDetails.actualDelivery
-                                    ? format(orderDetails.actualDelivery, 'EEEE, MMMM do')
-                                    : format(orderDetails.estimatedDelivery, 'EEEE, MMMM do')
-                                }
-                            </Text>
-                        </View>
-                        {orderDetails.trackingNumber && (
+                        {order.expectedDeliveryDate && (
+                            <View style={styles.deliveryRow}>
+                                <Text style={styles.deliveryLabel}>
+                                    {order.actualDeliveryDate ? 'Delivered' : 'Estimated Delivery'}
+                                </Text>
+                                <Text style={styles.deliveryDate}>
+                                    {order.actualDeliveryDate
+                                        ? format(new Date(order.actualDeliveryDate), 'EEEE, MMMM do')
+                                        : format(new Date(order.expectedDeliveryDate), 'EEEE, MMMM do')
+                                    }
+                                </Text>
+                            </View>
+                        )}
+                        {order.tracking?.trackingNumber && (
                             <View style={styles.deliveryRow}>
                                 <Text style={styles.deliveryLabel}>Tracking Number</Text>
                                 <TouchableOpacity onPress={handleTrackPackage}>
                                     <Text style={styles.trackingNumber}>
-                                        {orderDetails.trackingNumber}
+                                        {order.tracking.trackingNumber}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -612,7 +521,7 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
                     <View style={styles.quickActionsGrid}>
-                        {orderDetails.trackingNumber && (
+                        {order.tracking?.trackingNumber && (
                             <TouchableOpacity
                                 style={[styles.quickActionButton, styles.trackAction]}
                                 onPress={handleTrackPackage}
@@ -634,7 +543,7 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                             </Text>
                         </TouchableOpacity>
 
-                        {orderDetails.canReturn && (
+                        {canReturnOrder() && (
                             <TouchableOpacity
                                 style={[styles.quickActionButton, styles.returnAction]}
                                 onPress={handleReturnItems}
@@ -646,7 +555,7 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                             </TouchableOpacity>
                         )}
 
-                        {orderDetails.canCancel && (
+                        {canCancelOrder() && (
                             <TouchableOpacity
                                 style={[styles.quickActionButton, styles.cancelAction]}
                                 onPress={handleCancelOrder}
@@ -670,42 +579,43 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                     </View>
                 </View>
 
-                {/* Tracking Timeline */}
-                {orderDetails.trackingEvents.length > 0 && (
+                {/* Order Timeline */}
+                {order.timeline && order.timeline.length > 0 && (
                     <View style={styles.card}>
-                        <Text style={styles.sectionTitle}>Tracking Timeline</Text>
-                        {orderDetails.trackingEvents.map((event, index) => (
+                        <Text style={styles.sectionTitle}>Order Timeline</Text>
+                        {order.timeline.map((event, index) => (
                             <View key={event.id} style={styles.timelineEvent}>
                                 <View style={styles.timelineIndicator}>
                                     <View style={[
                                         styles.timelineDot,
-                                        event.isCompleted ? styles.timelineDotCompleted : styles.timelineDotPending
+                                        index === 0 ? styles.timelineDotCompleted : styles.timelineDotPending
                                     ]} />
-                                    {index < orderDetails.trackingEvents.length - 1 && (
+                                    {index < order.timeline.length - 1 && (
                                         <View style={[
                                             styles.timelineLine,
-                                            event.isCompleted ? styles.timelineLineCompleted : styles.timelineLinePending
+                                            index === 0 ? styles.timelineLineCompleted : styles.timelineLinePending
                                         ]} />
                                     )}
                                 </View>
                                 <View style={styles.timelineContent}>
                                     <Text style={[
                                         styles.timelineStatus,
-                                        event.isCompleted ? styles.timelineStatusCompleted : styles.timelineStatusPending
+                                        index === 0 ? styles.timelineStatusCompleted : styles.timelineStatusPending
                                     ]}>
-                                        {event.status}
+                                        {event.title}
                                     </Text>
                                     <Text style={[
                                         styles.timelineDescription,
-                                        event.isCompleted ? styles.timelineDescriptionCompleted : styles.timelineDescriptionPending
+                                        index === 0 ? styles.timelineDescriptionCompleted : styles.timelineDescriptionPending
                                     ]}>
                                         {event.description}
                                     </Text>
                                     <Text style={[
                                         styles.timelineLocation,
-                                        event.isCompleted ? styles.timelineLocationCompleted : styles.timelineLocationPending
+                                        index === 0 ? styles.timelineLocationCompleted : styles.timelineLocationPending
                                     ]}>
-                                        {event.location} • {format(event.timestamp, 'MMM d, h:mm a')}
+                                        {event.location && `${event.location} • `}
+                                        {format(new Date(event.timestamp), 'MMM d, h:mm a')}
                                     </Text>
                                 </View>
                             </View>
@@ -713,13 +623,13 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                     </View>
                 )}
 
-                {/* Order Items - Enhanced with smart image loading */}
+                {/* Order Items */}
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>
-                        Order Items ({orderDetails.items.length})
+                        Order Items ({order.items.length})
                     </Text>
-                    {orderDetails.items.map((item, index) => (
-                        <View key={item.id} style={[styles.orderItem, index < orderDetails.items.length - 1 && styles.orderItemBorder]}>
+                    {order.items.map((item, index) => (
+                        <View key={item.id} style={[styles.orderItem, index < order.items.length - 1 && styles.orderItemBorder]}>
                             <Image
                                 source={getOrderItemImage(item)}
                                 style={styles.itemImage}
@@ -729,26 +639,31 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                                 <Text style={styles.itemName} numberOfLines={2}>
                                     {item.name}
                                 </Text>
-                                {item.color && (
-                                    <Text style={styles.itemDetail}>Color: {item.color}</Text>
+                                {item.brand && (
+                                    <Text style={styles.itemDetail}>by {item.brand}</Text>
                                 )}
-                                {item.size && (
-                                    <Text style={styles.itemDetail}>Size: {item.size}</Text>
+                                {getVariantText(item) && (
+                                    <Text style={styles.itemDetail}>{getVariantText(item)}</Text>
                                 )}
                                 {item.sku && (
                                     <Text style={styles.itemSku}>SKU: {item.sku}</Text>
                                 )}
                                 <Text style={styles.itemSeller}>
-                                    Sold by {item.seller} • Qty: {item.quantity}
+                                    Sold by {item.seller.name} • Qty: {item.quantity}
                                 </Text>
                             </View>
                             <View style={styles.itemPricing}>
                                 <Text style={styles.itemPrice}>
-                                    ${(item.price * item.quantity).toFixed(2)}
+                                    ${item.totalAmount.toFixed(2)}
                                 </Text>
                                 {item.originalPrice && item.originalPrice > item.price && (
                                     <Text style={styles.itemOriginalPrice}>
                                         ${(item.originalPrice * item.quantity).toFixed(2)}
+                                    </Text>
+                                )}
+                                {item.discountAmount > 0 && (
+                                    <Text style={styles.itemDiscount}>
+                                        Save ${item.discountAmount.toFixed(2)}
                                     </Text>
                                 )}
                             </View>
@@ -761,17 +676,18 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                     <Text style={styles.sectionTitle}>Delivery Address</Text>
                     <View style={styles.addressContainer}>
                         <Text style={styles.addressName}>
-                            {orderDetails.shippingAddress.name}
+                            {formattedShippingAddress.name}
                         </Text>
-                        <Text style={styles.addressPhone}>
-                            {orderDetails.shippingAddress.phone}
+                        {formattedShippingAddress.phone && (
+                            <Text style={styles.addressPhone}>
+                                {formattedShippingAddress.phone}
+                            </Text>
+                        )}
+                        <Text style={styles.addressText}>
+                            {formattedShippingAddress.street}
                         </Text>
                         <Text style={styles.addressText}>
-                            {orderDetails.shippingAddress.street}
-                            {orderDetails.shippingAddress.apartment && `, ${orderDetails.shippingAddress.apartment}`}
-                        </Text>
-                        <Text style={styles.addressText}>
-                            {orderDetails.shippingAddress.city}, {orderDetails.shippingAddress.state} {orderDetails.shippingAddress.zipCode}
+                            {formattedShippingAddress.city}, {formattedShippingAddress.state} {formattedShippingAddress.zipCode}
                         </Text>
                     </View>
                 </View>
@@ -781,30 +697,57 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                     <Text style={styles.sectionTitle}>Order Summary</Text>
                     <View style={styles.summaryContainer}>
                         <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Subtotal</Text>
-                            <Text style={styles.summaryValue}>${orderDetails.subtotal.toFixed(2)}</Text>
+                            <Text style={styles.summaryLabel}>
+                                Subtotal ({order.summary.itemCount} {order.summary.itemCount === 1 ? 'item' : 'items'})
+                            </Text>
+                            <Text style={styles.summaryValue}>${order.summary.subtotal.toFixed(2)}</Text>
                         </View>
+
+                        {order.summary.savings > 0 && (
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryDiscount}>Savings</Text>
+                                <Text style={styles.summaryDiscount}>-${order.summary.savings.toFixed(2)}</Text>
+                            </View>
+                        )}
+
+                        {order.summary.discount > 0 && (
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryDiscount}>Discount</Text>
+                                <Text style={styles.summaryDiscount}>-${order.summary.discount.toFixed(2)}</Text>
+                            </View>
+                        )}
+
+                        {order.summary.couponDiscount > 0 && (
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryDiscount}>Promo Discount</Text>
+                                <Text style={styles.summaryDiscount}>-${order.summary.couponDiscount.toFixed(2)}</Text>
+                            </View>
+                        )}
+
                         <View style={styles.summaryRow}>
                             <Text style={styles.summaryLabel}>Shipping</Text>
                             <Text style={styles.summaryValue}>
-                                {orderDetails.shipping === 0 ? 'Free' : `${orderDetails.shipping.toFixed(2)}`}
+                                {order.summary.shipping === 0 ? 'Free' : `$${order.summary.shipping.toFixed(2)}`}
                             </Text>
                         </View>
+
                         <View style={styles.summaryRow}>
                             <Text style={styles.summaryLabel}>Tax</Text>
-                            <Text style={styles.summaryValue}>${orderDetails.tax.toFixed(2)}</Text>
+                            <Text style={styles.summaryValue}>${order.summary.tax.toFixed(2)}</Text>
                         </View>
-                        {orderDetails.discount > 0 && (
-                            <View style={styles.summaryRow}>
-                                <Text style={styles.summaryDiscount}>Discount</Text>
-                                <Text style={styles.summaryDiscount}>-${orderDetails.discount.toFixed(2)}</Text>
+
+                        {order.summary.fees && order.summary.fees.length > 0 && order.summary.fees.map(fee => (
+                            <View key={fee.type} style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>{fee.name}</Text>
+                                <Text style={styles.summaryValue}>${fee.amount.toFixed(2)}</Text>
                             </View>
-                        )}
+                        ))}
+
                         <View style={styles.summaryDivider} />
                         <View style={styles.summaryRow}>
                             <Text style={styles.summaryTotal}>Total</Text>
                             <Text style={styles.summaryTotalValue}>
-                                ${orderDetails.total.toFixed(2)}
+                                ${order.summary.total.toFixed(2)}
                             </Text>
                         </View>
                     </View>
@@ -820,20 +763,20 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                                 <Ionicons name="card" size={12} color="white" />
                             </View>
                             <Text style={styles.paymentMethodText}>
-                                {orderDetails.paymentMethod}
+                                {getPaymentMethodDisplay()}
                             </Text>
                         </View>
                     </View>
                     <View style={styles.billingContainer}>
                         <Text style={styles.paymentLabel}>Billing Address</Text>
                         <Text style={styles.billingName}>
-                            {orderDetails.billingAddress.name}
+                            {formattedBillingAddress.name}
                         </Text>
                         <Text style={styles.billingText}>
-                            {orderDetails.billingAddress.street}
+                            {formattedBillingAddress.street}
                         </Text>
                         <Text style={styles.billingText}>
-                            {orderDetails.billingAddress.city}, {orderDetails.billingAddress.state} {orderDetails.billingAddress.zipCode}
+                            {formattedBillingAddress.city}, {formattedBillingAddress.state} {formattedBillingAddress.zipCode}
                         </Text>
                     </View>
                 </View>
@@ -845,28 +788,28 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
                         <View style={styles.summaryRow}>
                             <Text style={styles.summaryLabel}>Order Date</Text>
                             <Text style={styles.summaryValue}>
-                                {format(orderDetails.createdAt, 'MMMM d, yyyy')}
+                                {format(new Date(order.placedAt), 'MMMM d, yyyy')}
                             </Text>
                         </View>
                         <View style={styles.summaryRow}>
                             <Text style={styles.summaryLabel}>Order Time</Text>
                             <Text style={styles.summaryValue}>
-                                {format(orderDetails.createdAt, 'h:mm a')}
+                                {format(new Date(order.placedAt), 'h:mm a')}
                             </Text>
                         </View>
-                        {orderDetails.carrier && (
+                        {order.shipping.method.carrier && (
                             <View style={styles.summaryRow}>
                                 <Text style={styles.summaryLabel}>Carrier</Text>
                                 <Text style={styles.summaryValue}>
-                                    {orderDetails.carrier}
+                                    {order.shipping.method.carrier}
                                 </Text>
                             </View>
                         )}
-                        {orderDetails.canReturn && orderDetails.returnDeadline && (
+                        {canReturnOrder() && order.returnDeadline && (
                             <View style={styles.summaryRow}>
                                 <Text style={styles.summaryLabel}>Return By</Text>
                                 <Text style={styles.summaryValue}>
-                                    {format(orderDetails.returnDeadline, 'MMMM d, yyyy')}
+                                    {format(new Date(order.returnDeadline), 'MMMM d, yyyy')}
                                 </Text>
                             </View>
                         )}
@@ -893,6 +836,7 @@ Track your order: https://walmart.com/track/${orderDetails.orderNumber}`;
         </SafeAreaView>
     );
 }
+
 
 const styles = StyleSheet.create({
     // Main Container Styles
@@ -1299,6 +1243,18 @@ const styles = StyleSheet.create({
         textDecorationLine: 'line-through',
         marginTop: 4,
         fontWeight: '500',
+    },
+    itemDiscount: {
+        color: '#059669',
+        fontSize: 12,
+        fontWeight: '700',
+        backgroundColor: '#ECFDF5',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        marginTop: 4,
+        borderWidth: 1,
+        borderColor: '#A7F3D0',
     },
 
     // Enhanced Address Styles

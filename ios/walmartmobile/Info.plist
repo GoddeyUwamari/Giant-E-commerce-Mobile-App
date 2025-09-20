@@ -4,6 +4,8 @@
   <dict>
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
+    <key>CFBundleAllowMixedLocalizations</key>
+    <true/>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
@@ -31,11 +33,23 @@
           <string>com.walmartmobile.app</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.210498650658-8mlul4r4ev73iqekoru97ptrbkd8rm0h</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.210498650658-8mlul4r4ev73iqekoru97ptrbkd8rm0h.apps.googleusercontent.com</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>GMSApiKey</key>
-    <string>YOUR_IOS_GOOGLE_MAPS_API_KEY</string>
+    <string>$GOOGLE_MAPS_API_KEY_IOS</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -47,20 +61,36 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Walmart app accesses your calendar to schedule delivery appointments, set shopping reminders, and track order dates.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Walmart app accesses your calendar to schedule delivery appointments, set shopping reminders, and track order dates.</string>
     <key>NSCameraUsageDescription</key>
-    <string>This app uses camera to scan barcodes and take photos.</string>
+    <string>Walmart app uses the camera to scan barcodes, capture receipts, and take product photos for reviews and returns.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>Walmart app accesses contacts to help you share shopping lists and send gifts to friends and family.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Use Face ID or Touch ID to securely sign in to your Walmart account and authorize purchases.</string>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>This app uses location to find nearby Walmart stores.</string>
+    <string>Walmart app uses location to find nearby stores, show local deals, and estimate delivery times.</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>This app uses location to find nearby Walmart stores.</string>
+    <string>Walmart app uses location to find nearby stores and provide location-based shopping features.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>This app uses location to find nearby Walmart stores.</string>
+    <string>Walmart app uses location to find nearby stores, show local deals, and estimate delivery times.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your microphone</string>
+    <string>Walmart app uses the microphone for voice shopping commands and video product reviews.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>Walmart app uses motion detection for shake-to-clear shopping cart and gesture controls.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to save photos</string>
+    <string>Walmart app saves shopping receipts and product photos for your records.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app uses photos to upload product images.</string>
+    <string>Walmart app accesses photos to upload product images, receipts, and return documentation.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Allow $(PRODUCT_NAME) to access your reminders</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Walmart app can create reminders for your shopping lists and order deliveries.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Walmart app uses speech recognition for voice shopping commands and product search.</string>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>

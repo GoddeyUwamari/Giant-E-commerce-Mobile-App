@@ -17,9 +17,17 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 // Import unified systems
-import { getImageById } from '../../assets/images/imageLoader';
 import { useCartStore } from '../../store/slices/cartSlice';
-import { ALL_PRODUCTS } from '../../constants/products';
+import { ALL_PRODUCTS } from '../../constants/products/data';
+
+// Add this helper function to replace the old getImageById import
+const getImageById = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
+};
 
 const COLORS = {
     walmartBlue: '#0071CE',
@@ -104,8 +112,7 @@ interface EligibleOrder {
 
 // Generate mock returns using real product data
 const generateMockReturns = (): Return[] => {
-    const sampleProducts = ALL_PRODUCTS.slice(10, 15); // Use products 10-15
-    const statuses: Return['status'][] = ['completed', 'processing', 'pending'];
+    const sampleProducts = ALL_PRODUCTS.slice(10, 15);    const statuses: Return['status'][] = ['completed', 'processing', 'pending'];
     const returnMethods = ['Store Return', 'Mail Return', 'Pickup Return'];
     const refundMethods = ['Original Payment Method', 'Store Credit', 'Gift Card'];
     const returnReasons = [
@@ -128,14 +135,15 @@ const generateMockReturns = (): Return[] => {
             name: product.name,
             price: product.price,
             quantity: 1,
-            imageId: product.id, // Use product ID for smart image loading
+            imageId: product.id,
             brand: product.brand || 'Walmart',
             condition: ['Defective', 'Unwanted', 'Wrong Size'][index % 3],
             returnReason: returnReasons[index % returnReasons.length],
-            sku: product.sku,
+            sku: product.sku || `SKU-${product.id}`,
             variant: {
-                color: product.variants?.colors?.[0]?.name,
-                size: product.variants?.sizes?.[0]?.name,
+                // Simplify variant handling
+                color: undefined,
+                size: undefined,
             },
         };
 
@@ -185,9 +193,9 @@ const generateMockReturns = (): Return[] => {
     });
 };
 
-// Generate eligible items using real product data
+// Update the generateEligibleItems function:
 const generateEligibleItems = (): EligibleOrder[] => {
-    const sampleProducts = ALL_PRODUCTS.slice(0, 8); // Use first 8 products
+    const sampleProducts = ALL_PRODUCTS.slice(0, 8);
 
     return Array.from({ length: 3 }, (_, orderIndex) => {
         const orderDate = new Date();
@@ -197,7 +205,7 @@ const generateEligibleItems = (): EligibleOrder[] => {
         const orderProducts = sampleProducts.slice(orderIndex * 2, orderIndex * 2 + itemCount);
 
         const items: EligibleOrderItem[] = orderProducts.map((product, itemIndex) => {
-            const daysLeft = 30 - (orderIndex * 10 + 5); // Simulate days left for return
+            const daysLeft = 30 - (orderIndex * 10 + 5);
 
             return {
                 id: `eligible_${orderIndex}_${itemIndex}`,
@@ -209,10 +217,11 @@ const generateEligibleItems = (): EligibleOrder[] => {
                 brand: product.brand || 'Walmart',
                 eligible: daysLeft > 0,
                 daysLeft: Math.max(0, daysLeft),
-                sku: product.sku,
+                sku: product.sku || `SKU-${product.id}`,
                 variant: {
-                    color: product.variants?.colors?.[0]?.name,
-                    size: product.variants?.sizes?.[0]?.name,
+                    // Simplify variant handling
+                    color: undefined,
+                    size: undefined,
                 },
             };
         });

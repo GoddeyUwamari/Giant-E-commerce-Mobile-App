@@ -4,18 +4,24 @@ import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/aut
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
+import {
+    FIREBASE_API_KEY,
+    FIREBASE_AUTH_DOMAIN,
+    FIREBASE_PROJECT_ID,
+    FIREBASE_STORAGE_BUCKET,
+    FIREBASE_MESSAGING_SENDER_ID,
+    FIREBASE_APP_ID,
+} from '@env';
 
-// Get values from app.json extra section
-const extra = Constants.expoConfig?.extra || {};
+console.log('FIREBASE_API_KEY loaded:', FIREBASE_API_KEY ? 'Present' : 'Missing');
 
 export const firebaseConfig = {
-    apiKey: extra.FIREBASE_API_KEY,
-    authDomain: extra.FIREBASE_AUTH_DOMAIN,
-    projectId: extra.FIREBASE_PROJECT_ID,
-    storageBucket: extra.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: extra.FIREBASE_MESSAGING_SENDER_ID,
-    appId: extra.FIREBASE_APP_ID,
+    apiKey: FIREBASE_API_KEY,
+    authDomain: FIREBASE_AUTH_DOMAIN,
+    projectId: FIREBASE_PROJECT_ID,
+    storageBucket: FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: FIREBASE_MESSAGING_SENDER_ID,
+    appId: FIREBASE_APP_ID,
 };
 
 // Initialize Firebase

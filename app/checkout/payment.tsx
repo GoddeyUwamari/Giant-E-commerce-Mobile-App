@@ -14,12 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
-import { NotificationIntegrations } from '../../services/notifications/notificationIntegrations';
 
 // 🚀 FIXED: Import actual services and types
 import { useCartStore } from '../../store/slices/cartSlice';
 import { paymentService } from '../../services/api/payments';
 import PaymentForm from '../../components/forms/PaymentForm';
+import OrderCreationService from '../../services/orderCreation/OrderCreationService';
+import { NotificationIntegrations } from '../../services/notifications/notificationIntegrations';
+
 import type {
     PaymentMethod,
     PaymentIntent,
@@ -66,8 +68,75 @@ export default function PaymentPage(): JSX.Element {
         try {
             setIsLoading(true);
 
-            // TODO: Replace with actual payment method loading when available
-            const mockPaymentMethods: PaymentMethod[] = [];
+            // Mock payment methods for development
+            const mockPaymentMethods: PaymentMethod[] = [
+                {
+                    id: 'pm_mock_1',
+                    userId: 'current_user',
+                    stripePaymentMethodId: 'pm_1234567890',
+                    stripeCustomerId: 'cus_mock',
+                    type: 'card',
+                    isDefault: true,
+                    nickname: 'Personal Card',
+                    card: {
+                        brand: 'visa',
+                        last4: '4242',
+                        expiryMonth: 12,
+                        expiryYear: 2027,
+                        funding: 'credit',
+                        country: 'US',
+                        fingerprint: 'fp_mock_1',
+                    },
+                    billingDetails: {
+                        name: 'John Doe',
+                        address: {
+                            line1: '123 Main St',
+                            city: 'New York',
+                            state: 'NY',
+                            postalCode: '10001',
+                            country: 'US',
+                        },
+                    },
+                    metadata: {},
+                    isExpired: false,
+                    isValid: true,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                },
+                {
+                    id: 'pm_mock_2',
+                    userId: 'current_user',
+                    stripePaymentMethodId: 'pm_0987654321',
+                    stripeCustomerId: 'cus_mock',
+                    type: 'card',
+                    isDefault: false,
+                    nickname: 'Work Card',
+                    card: {
+                        brand: 'mastercard',
+                        last4: '8888',
+                        expiryMonth: 6,
+                        expiryYear: 2026,
+                        funding: 'credit',
+                        country: 'US',
+                        fingerprint: 'fp_mock_2',
+                    },
+                    billingDetails: {
+                        name: 'John Doe',
+                        address: {
+                            line1: '456 Work Ave',
+                            city: 'New York',
+                            state: 'NY',
+                            postalCode: '10002',
+                            country: 'US',
+                        },
+                    },
+                    metadata: {},
+                    isExpired: false,
+                    isValid: true,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                },
+            ];
 
             setPaymentMethods(mockPaymentMethods);
             setSelectedPayment(mockPaymentMethods.find(p => p.isDefault) || mockPaymentMethods[0] || null);
@@ -379,7 +448,23 @@ export default function PaymentPage(): JSX.Element {
                 throw new Error('Missing Stripe payment method ID');
             }
 
-            // Use Stripe React Native to confirm the payment
+            // Check if this is a mock payment method
+            if (payment.stripePaymentMethodId.startsWith('pm_mock') || payment.stripePaymentMethodId === 'pm_1234567890') {
+                console.log('Using mock payment method, simulating successful payment...');
+
+                // Simulate successful payment for development
+                const mockResult = {
+                    id: paymentIntent.id,
+                    status: 'Succeeded',
+                    amount: paymentIntent.amount,
+                    currency: paymentIntent.currency,
+                };
+
+                await handlePaymentSuccess(mockResult);
+                return;
+            }
+
+            // Use real Stripe confirmation for real payment methods
             const { error, paymentIntent: confirmedPaymentIntent } = await stripeConfirmPayment(
                 paymentIntent.clientSecret,
                 {
@@ -390,44 +475,12 @@ export default function PaymentPage(): JSX.Element {
                 }
             );
 
-            if (error) {
-                console.error('Stripe payment confirmation error:', error);
-
-                // Handle specific error types
-                if (error.code === 'Canceled') {
-                    throw new Error('Payment was canceled');
-                } else if (error.code === 'Failed') {
-                    throw new Error('Payment failed. Please check your card details and try again.');
-                } else if (error.code === 'PaymentIntentAuthenticationFailure') {
-                    throw new Error('Payment authentication failed. Please try again.');
-                } else {
-                    throw new Error(error.message || 'Payment failed for an unknown reason');
-                }
-            }
-
-            if (!confirmedPaymentIntent) {
-                throw new Error('No payment intent returned from Stripe');
-            }
-
-            console.log('✅ Stripe payment confirmed:', confirmedPaymentIntent.status);
-
-            if (confirmedPaymentIntent.status === 'Succeeded') {
-                await handlePaymentSuccess(confirmedPaymentIntent);
-            } else if (confirmedPaymentIntent.status === 'RequiresAction') {
-                // This should be handled automatically by Stripe React Native
-                throw new Error('Payment requires additional authentication');
-            } else if (confirmedPaymentIntent.status === 'RequiresPaymentMethod') {
-                throw new Error('Your payment method was declined. Please try a different card.');
-            } else {
-                throw new Error(`Payment failed with status: ${confirmedPaymentIntent.status}`);
-            }
-
+            // ... rest of your existing Stripe handling code
         } catch (error) {
             console.error('Card payment processing error:', error);
             throw error;
         }
     };
-
     // Alternative payment processors (placeholders)
     const processApplePayPayment = async (paymentIntent: PaymentIntent) => {
         console.log('Apple Pay payment initiated');
@@ -450,43 +503,124 @@ export default function PaymentPage(): JSX.Element {
     // 🚀 UPDATED: Handle successful payment
     const handlePaymentSuccess = async (result: any) => {
         try {
-            console.log('Payment succeeded, processing order completion...');
+            console.log('🎉 Payment succeeded, processing order completion...');
 
-            // Optionally call backend to confirm and create order record
+            // Get current cart and payment data
+            const currentState = useCartStore.getState();
+            const {
+                items: cartItems,
+                summary,
+                deliveryAddress,
+                paymentIntent,
+                appliedPromoCodes,
+            } = currentState;
+
+            // Validate required data
+            if (!cartItems.length) {
+                throw new Error('No cart items found');
+            }
+
+            if (!deliveryAddress) {
+                throw new Error('No delivery address found');
+            }
+
+            if (!paymentIntent) {
+                throw new Error('No payment intent found');
+            }
+
+            if (!selectedPayment?.stripePaymentMethodId) {
+                throw new Error('No valid payment method found');
+            }
+
+            // Prepare data for order creation
+            const orderCreationData = {
+                cartItems,
+                cartSummary: summary,
+                deliveryAddress,
+                paymentIntent,
+                paymentMethodId: selectedPayment.stripePaymentMethodId,
+                appliedPromoCodes: appliedPromoCodes.map(promo => ({
+                    code: promo.code,
+                    description: promo.description || '',
+                })),
+                customerId: undefined, // Add user ID if you have user management
+                customerEmail: 'customer@example.com', // Add real customer email if available
+            };
+
+            // Create order using the Order Creation Service
+            console.log('📦 Creating order from cart data...');
+            const orderResult = await OrderCreationService.handlePaymentSuccess(
+                result,
+                orderCreationData
+            );
+
+            if (!orderResult.success) {
+                throw new Error(orderResult.error || 'Failed to create order');
+            }
+
+            console.log('✅ Order created successfully:', orderResult.orderId);
+
+            // Optional: Try to confirm with backend (non-critical)
             try {
                 const confirmationResult = await paymentService.confirmPayment({
                     paymentIntentId: result.id,
-                    paymentMethodId: selectedPayment!.stripePaymentMethodId!,
+                    paymentMethodId: selectedPayment.stripePaymentMethodId,
                     savePaymentMethod: false,
                 });
-                console.log('Backend confirmation result:', confirmationResult.status);
+                console.log('✅ Backend confirmation completed:', confirmationResult.status);
             } catch (backendError) {
-                console.warn('Backend confirmation failed, but payment succeeded:', backendError);
-                // Continue with order completion even if backend confirmation fails
+                console.warn('⚠️ Backend confirmation failed, but order was created:', backendError);
+                // Continue with success flow - backend confirmation is optional
             }
 
-            console.log('Order details:', {
-                total: summary.total,
-                paymentMethod: selectedPayment,
-                paymentIntentId: result.id,
-                timestamp: new Date().toISOString(),
-            });
+            // Send success notifications
+            try {
+                await NotificationIntegrations.sendOrderConfirmation(
+                    orderResult.orderId!,
+                    summary.total
+                );
+                await NotificationIntegrations.sendPaymentSuccess(
+                    result.id,
+                    summary.total
+                );
+            } catch (notificationError) {
+                console.warn('⚠️ Notification sending failed:', notificationError);
+                // Non-critical error - continue with success flow
+            }
 
-            // 🔔 Send order notifications
-            await NotificationIntegrations.sendOrderConfirmation(result.id, summary.total);
-            await NotificationIntegrations.sendPaymentSuccess(result.id, summary.total);
-
-            // Clear cart after successful payment
+            // Clear cart after successful order creation
+            console.log('🧹 Clearing cart data...');
             await clearCart();
 
-            console.log('Order completed successfully, navigating to confirmation...');
-            router.push('/checkout/confirmation');
+            console.log('🚀 Navigating to confirmation page...');
+
+            // Navigate to confirmation with the order ID
+            router.push({
+                pathname: '/checkout/confirmation',
+                params: { orderId: orderResult.orderId }
+            });
+
         } catch (error) {
-            console.error('Error handling payment success:', error);
+            console.error('❌ Error handling payment success:', error);
+
+            // Show user-friendly error message
             Alert.alert(
-                'Payment Successful',
-                'Your payment was processed but there was an issue completing the order. Please contact support.',
-                [{ text: 'OK', onPress: () => router.push('/(tabs)') }]
+                'Order Processing Issue',
+                'Your payment was successful, but there was an issue processing your order. Please contact support with your payment confirmation.',
+                [
+                    {
+                        text: 'Contact Support',
+                        onPress: () => {
+                            // Add your support contact logic here
+                            console.log('User requested support contact');
+                        }
+                    },
+                    {
+                        text: 'Continue',
+                        onPress: () => router.push('/(tabs)'),
+                        style: 'cancel'
+                    }
+                ]
             );
         }
     };
@@ -806,7 +940,7 @@ export default function PaymentPage(): JSX.Element {
                                 <TouchableOpacity
                                     style={[
                                         styles.alternativeCard,
-                                        selectedPayment?.type === 'google_pay' && styles.paymentCardSelecte
+                                        selectedPayment?.type === 'google_pay' && styles.paymentCardSelected
                                     ]}
                                     onPress={() => {
                                         const googlePayMethod: PaymentMethod = {
@@ -938,7 +1072,7 @@ export default function PaymentPage(): JSX.Element {
                             ]}>
                                 {((summary.shipping || 0) + (summary.delivery || 0)) === 0
                                     ? 'Free'
-                                    : `$${((summary.shipping || 0) + (summary.delivery || 0)).toFixed(2)}`
+                                    : `${((summary.shipping || 0) + (summary.delivery || 0)).toFixed(2)}`
                                 }
                             </Text>
                         </View>
@@ -1465,7 +1599,6 @@ export const styles = StyleSheet.create({
         marginLeft: 8,
         letterSpacing: 0.4,
     },
-
     // Bottom Action - Walmart Theme
     bottomAction: {
         backgroundColor: '#FFFFFF',

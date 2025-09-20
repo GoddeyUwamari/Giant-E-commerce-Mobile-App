@@ -1,0 +1,49 @@
+{
+  "processingDate": "2025-09-03T03:45:24.333Z",
+  "dataset": "local-amazon-products",
+  "totalImages": 120,
+  "successRate": "100.0%",
+  "breakdown": {
+    "successful": 120,
+    "skipped": 0,
+    "failed": 0
+  },
+  "categoryBreakdown": {
+    "electronics": {
+      "total": 20,
+      "successful": 20,
+      "successRate": "100.0%",
+      "commonErrors": []
+    },
+    "fashion": {
+      "total": 20,
+      "successful": 20,
+      "successRate": "100.0%",
+      "commonErrors": []
+    },
+    "baby-kids": {
+      "total": 20,
+      "successful": 20,
+      "successRate": "100.0%",
+      "commonErrors": []
+    },
+    "health-beauty": {
+      "total": 20,
+      "successful": 20,
+      "successRate": "100.0%",
+      "commonErrors": []
+    },
+    "home-garden": {
+      "total": 20,
+      "successful": 20,
+      "successRate": "100.0%",
+      "commonErrors": []
+    },
+    "sports-outdoors": {
+      "total": 20,
+      "successful": 20,
+      "successRate": "100.0%",
+      "commonErrors": []
+    }
+  }
+}

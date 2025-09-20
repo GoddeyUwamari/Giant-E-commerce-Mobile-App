@@ -1,0 +1,798 @@
+{
+  "timestamp": "2025-09-03T03:45:24.333Z",
+  "dataset": "local-amazon-products",
+  "totalProductsProcessed": 120,
+  "imageProcessingResults": {
+    "totalCategories": 6,
+    "totalProducts": 120,
+    "totalSuccessful": 120,
+    "totalSkipped": 0,
+    "totalFailed": 0,
+    "categoryResults": {
+      "electronics": {
+        "total": 20,
+        "successful": 20,
+        "skipped": 0,
+        "failed": 0,
+        "errors": []
+      },
+      "fashion": {
+        "total": 20,
+        "successful": 20,
+        "skipped": 0,
+        "failed": 0,
+        "errors": []
+      },
+      "baby-kids": {
+        "total": 20,
+        "successful": 20,
+        "skipped": 0,
+        "failed": 0,
+        "errors": []
+      },
+      "health-beauty": {
+        "total": 20,
+        "successful": 20,
+        "skipped": 0,
+        "failed": 0,
+        "errors": []
+      },
+      "home-garden": {
+        "total": 20,
+        "successful": 20,
+        "skipped": 0,
+        "failed": 0,
+        "errors": []
+      },
+      "sports-outdoors": {
+        "total": 20,
+        "successful": 20,
+        "skipped": 0,
+        "failed": 0,
+        "errors": []
+      }
+    }
+  },
+  "categories": [
+    "electronics",
+    "fashion",
+    "baby-kids",
+    "health-beauty",
+    "home-garden",
+    "sports-outdoors"
+  ],
+  "productsByCategory": {
+    "electronics": [
+      {
+        "id": "product_1756871052812_fb69w9wvq",
+        "name": "Lloyd 1.5 Ton 3 Star Inverter Split Ac (5 In 1 Convertible, Copper, Anti-Viral + Pm 2.5 Filter, 2023 Model, White, Gls18I3...",
+        "price": "₹58,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052812_rt3zc6ujq",
+        "name": "LG 1.5 Ton 5 Star AI DUAL Inverter Split AC (Copper, Super Convertible 6-in-1 Cooling, HD Filter with Anti-Virus Protectio...",
+        "price": "₹75,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052812_osdfts3er",
+        "name": "LG 1 Ton 4 Star Ai Dual Inverter Split Ac (Copper, Super Convertible 6-In-1 Cooling, Hd Filter With Anti Virus Protection,...",
+        "price": "₹61,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052812_abnypzk6s",
+        "name": "LG 1.5 Ton 3 Star AI DUAL Inverter Split AC (Copper, Super Convertible 6-in-1 Cooling, HD Filter with Anti-Virus Protectio...",
+        "price": "₹68,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052812_uwt3nfm5p",
+        "name": "Carrier 1.5 Ton 3 Star Inverter Split AC (Copper,ESTER Dxi, 4-in-1 Flexicool Inverter, 2022 Model,R32,White)",
+        "price": "₹67,790",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052812_3iagwsjvb",
+        "name": "Voltas 1.4 Ton 3 Star Inverter Split AC(Copper, Adjustable Cooling, Anti-dust Filter, 2023 Model, 173V Vectra Platina, White)",
+        "price": "₹70,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_8aq61unxf",
+        "name": "Lloyd 1.0 Ton 3 Star Inverter Split Ac (5 In 1 Convertible, Copper, Anti-Viral + Pm 2.5 Filter, 2023 Model, White With Chr...",
+        "price": "₹49,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_ptvp5co4c",
+        "name": "Lloyd 1.5 Ton 5 Star Inverter Split Ac (5 In 1 Convertible, Copper, Anti-Viral + Pm 2.5 Filter, 2023 Model, White With Chr...",
+        "price": "₹67,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_owjiqzbgy",
+        "name": "Carrier 1 Ton 3 Star AI Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling,Dual Filtration with HD & PM 2.5 F...",
+        "price": "₹58,190",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_u26aes91z",
+        "name": "Voltas 1.5 Ton, 5 Star, Inverter Split AC(Copper, 4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 185V DAZJ, White)",
+        "price": "₹73,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_hibddb1p1",
+        "name": "Daikin 1 Ton 3 Star Inverter Split AC (Copper, PM 2.5 Filter, Triple Display, Dew Clean Technology, Coanda Airflow, 2023 M...",
+        "price": "₹48,200",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_5lxw3f257",
+        "name": "Daikin 1.5 Ton 5 Star Inverter Split AC (Copper, PM 2.5 Filter, 2022 Model, MTKM50U, White)",
+        "price": "₹67,200",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_dytw8u2mu",
+        "name": "Panasonic 1.5 Ton 5 Star Wi-Fi Inverter Smart Split AC (Copper Condenser, 7 in 1 Convertible with additional AI Mode, 4 Wa...",
+        "price": "₹63,400",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_arekhiz2c",
+        "name": "Carrier 1.5 Ton 5 Star AI Flexicool Inverter Split AC (Copper, Convertible 6-in-1 Cooling,Dual Filtration with HD & PM 2.5...",
+        "price": "₹78,490",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052813_uf5e7doz1",
+        "name": "Whirlpool 1.5 Ton 3 Star, Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling Mode, HD Filter 2023 Model, S3K1...",
+        "price": "₹62,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_96nxibh65",
+        "name": "Samsung 1.5 Ton 3 Star Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Easy Filter Plus (Anti-Bacteria), 2023 ...",
+        "price": "₹60,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_8ru5edmpc",
+        "name": "Lloyd 1.0 Ton 5 Star Inverter Split Ac (5 In 1 Convertible, Copper, Anti-Viral + Pm 2.5 Filter, 2023 Model, White With Chr...",
+        "price": "₹57,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_p0j4hrsy9",
+        "name": "Godrej 1.5 Ton 5 Star 5-In-1 Convertible, Inverter Split AC (100% Copper, Heavy Duty Cooling at 52°C, 2023 Model,AC 1.5T E...",
+        "price": "₹54,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_ywxbdkuot",
+        "name": "Godrej 1 Ton 3 Star Inverter Split Ac Model 2023 (100% Copper,5-In-1 Convertible, Ac 1T Ei 12Tinv3R32-Gwa Split, White)",
+        "price": "₹42,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_apnrc1gsb",
+        "name": "Daikin 1.5 Ton 3 Star Inverter Split AC (Copper, PM 2.5 Filter, Triple Display, Dew Clean Technology, Coanda Airflow, MTKL...",
+        "price": "₹58,400",
+        "rating": "N/A"
+      }
+    ],
+    "fashion": [
+      {
+        "id": "product_1756871052814_4n7bq0qlm",
+        "name": "Blue Star 1.5 Ton 3 Star Convertible 4 in 1 Cooling Inverter Split AC (Copper, Multi Sensors, Stabalizer Free Operation, D...",
+        "price": "₹62,250",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_8x79dgn71",
+        "name": "LG 1.5 Ton 2 Star DUAL Inverter Split AC (Copper, Convertible 4-in-1 Cooling, HD Filter with Anti-virus Protection, 2023 M...",
+        "price": "₹62,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_p2hrxo5ic",
+        "name": "LG 1.5 Ton 4 Star AI DUAL Inverter Split AC (Copper, Super Convertible 6-in-1 Cooling, HD Filter with Anti-Virus Protectio...",
+        "price": "₹71,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_ce9whz8cq",
+        "name": "Panasonic 1 Ton 5 Star Wi-Fi Inverter Smart Split AC (Copper Condenser, 7 in 1 Convertible with additional AI Mode, 4 Way ...",
+        "price": "₹54,600",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_7h5uf01o8",
+        "name": "Lloyd 1.5 Ton 3 Star Fixed Speed Window Ac (Copper, 2023 Model, White With Silver Deco Strip, Glw18C3Ywsew)",
+        "price": "₹47,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052814_42lk6d5mg",
+        "name": "Samsung 1.5 Ton 5 Star Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Anti-Bacteria, 2023 Model AR18CYNZABE W...",
+        "price": "₹72,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_dmrg0nwvj",
+        "name": "Voltas 1.5 Ton 5 Star, Inverter Window AC (Copper, 2-in-1 Adjustable Mode, 2023 Model, 185V Vertis Elite, White)",
+        "price": "₹49,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_muphqzlzj",
+        "name": "Samsung 1 Ton 3 Star Inverter Split Ac (Copper, Convertible 5-In-1 Cooling Mode, Easy Filter Plus (Anti-Bacteria), 2023 Mo...",
+        "price": "₹50,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_iegedp8rw",
+        "name": "LG 1.0 Ton 5 Star DUAL Inverter Wi-Fi Window AC (Copper, Convertible 4-in-1 cooling, PW-Q12WUZA, 2022 Model, HD Filter, Wh...",
+        "price": "₹75,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_vbtb5ncvl",
+        "name": "Godrej 1.5 Ton 3 Star 5-In-1 Convertible, Inverter Split AC (100% Copper,I-Sense, 2023 Model, AC 1.5T EI 18TINV3R32-GWA/AC...",
+        "price": "₹46,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_hnwi55ygj",
+        "name": "Voltas 2 Ton 3 Star, Inverter Split AC(Copper, 4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 243V Vectra Elite, Wh...",
+        "price": "₹79,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_qp19soa4m",
+        "name": "Samsung 1.5 Ton 3 Star Wi-fi Enabled, Wind-Free Technology Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Ant...",
+        "price": "₹62,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_ggpc43a61",
+        "name": "Whirlpool 1.0 Ton 3 Star, Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling Mode, HD Filter 2023 Model, S3K1...",
+        "price": "₹57,700",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_dsssbi8u5",
+        "name": "Whirlpool 1.5 Ton 5 Star, Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling Mode, HD Filter 2023 Model, S3I3...",
+        "price": "₹70,600",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_b40jkyq0i",
+        "name": "Voltas 0.8 Ton 3 Star, Inverter Split AC(Copper, 4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 103V Vectra Elite, ...",
+        "price": "₹54,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_8vq2rigu9",
+        "name": "LG 0.8 Ton 3 Star AI DUAL Inverter Split AC (Copper, Super Convertible 6-in-1 Cooling, HD Filter with Anti Virus protectio...",
+        "price": "₹57,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052815_is91or86x",
+        "name": "Daikin 1 Ton 5 Star Inverter Split AC (Copper, PM 2.5 Filter, 2022 Model, MTKM35U, White)",
+        "price": "₹55,500",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_qqpam2xjn",
+        "name": "Blue Star 1 Ton Fixed Speed Portable AC (Copper, Anti Bacterial Silver Coating, Self Diagnosis, Comfort Sleep Modes-Auto/C...",
+        "price": "₹39,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_2mr3c1mkl",
+        "name": "Blue Star 1 Ton 3 Star Fixed Speed Window AC (Copper, Turbo Cool, Humidity Control, Fan Modes-Auto/High/Medium/Low, Hydrop...",
+        "price": "₹33,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_r25q1h38y",
+        "name": "Panasonic 1.5 Ton 3 Star Wi-Fi Inverter Smart Split AC (Copper Condenser, 7 in 1 Convertible with additional AI Mode, PM ...",
+        "price": "₹55,400",
+        "rating": "N/A"
+      }
+    ],
+    "baby-kids": [
+      {
+        "id": "product_1756871052816_fifmtr8l7",
+        "name": "Samsung 1 Ton 3 Star Wi-fi Enabled, Wind-Free Technology Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Anti-...",
+        "price": "₹53,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_1yxrm7tws",
+        "name": "Daikin 1.5 Ton 3 Star Fixed Speed Split AC (Copper, PM 2.5 Filter, 2022 Model, FTL50U, White)",
+        "price": "₹55,600",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_q3vieuubk",
+        "name": "Carrier 1.5 Ton 3 Star Fixed Speed Window AC( Copper,High Density Filter for Dust Filtration, 2Way Air Directional Contro...",
+        "price": "₹45,090",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_q23ggbey9",
+        "name": "IFB 1.5 Ton 3 Star Heavy Duty Inverter Split AC (Copper, Convertible Flexi 8-in-1 Cooling, PM 0.3 Filter, 2022 Model, CI18...",
+        "price": "₹47,790",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_t5zlk6n3g",
+        "name": "Blue Star 0.8 Ton 3 Star Inverter Split Ac (Copper, Turbo Cool, Gold Fins, Comfort Sleep, Self Clean Technology, Multi Sen...",
+        "price": "₹41,500",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_mxpp4w5h1",
+        "name": "Carrier 2 Ton 5 Star AI Flexicool Inverter Split AC (Copper, Convertible 6-in-1 Cooling,Dual Filtration with HD & PM 2.5 F...",
+        "price": "₹91,690",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_ga0m80m87",
+        "name": "Blue Star 1 Ton 3 Star Convertible 4 in 1 Cooling Inverter Split AC (Copper, Multi Sensors, Stabalizer Free Operation, Dus...",
+        "price": "₹51,500",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_mm116clwr",
+        "name": "Cruise 1.5 Ton 3 Star Inverter Split AC with 7-Stage Air Filtration (100% Copper, Convertible 4-in-1, PM 2.5 Filter, 2022 ...",
+        "price": "₹52,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052816_4wsdlsm4u",
+        "name": "AmazonBasics 1.5 Ton 5 Star Inverter Split AC (White, Air Purifier, Copper)",
+        "price": "₹56,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052817_tp4tg2t2a",
+        "name": "Voltas 1 Ton 3 Star, Inverter Split AC(Copper, 4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 123V Vectra Elegant, ...",
+        "price": "₹56,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_dinfgr17e",
+        "name": "Samsung 1 Ton 5 Star Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Anti-bacterial Filter, 2023 Model AR12CY5...",
+        "price": "₹57,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_wahkwrba3",
+        "name": "Carrier 2 Ton 3 Star AI Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling,Dual Filtration with HD & PM 2.5 F...",
+        "price": "₹80,890",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_amyyk6st3",
+        "name": "Lloyd 1.5 Ton 5 Star Fixed Speed Window Ac (Copper, 2023 Model, White With Silver Deco Strip, Glw18C5Xwgmr)",
+        "price": "₹54,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_7zbli654t",
+        "name": "Lloyd 1.0 Ton 3 Star Fixed Speed Window AC (Copper, 2023 Model, White with Silver Deco Strip, GLW12C3XWSEW)",
+        "price": "₹43,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_zpl3ot878",
+        "name": "Panasonic 1 Ton 3 Star Wi-Fi Inverter Split Air Conditioner (White)",
+        "price": "₹48,100",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_okq7x08w7",
+        "name": "Whirlpool 1.0 Ton 5 Star, Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling Mode, HD Filter 2023 Model, S3I1...",
+        "price": "₹64,200",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_zknzbn4uw",
+        "name": "Samsung 1.5 Ton 3 Star Wind-Free Technology Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Anti-bacterial Fil...",
+        "price": "₹61,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_fizvcj2k8",
+        "name": "Haier 1.5 Ton 3 Star Frost Self Clean Inverter Split AC(100% Grooved copper, Super Anti-corrosion, 2023 Model, HSU17V-TMS3...",
+        "price": "₹64,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_ln0sbs71g",
+        "name": "Hitachi Split Ac - 1.5 Ton Kiyora 5200Fx I Fresh Inverter - R32 - RSRG518FFEO (Gold)",
+        "price": "₹71,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_roqnsy882",
+        "name": "Lloyd 2.0 Ton 5 Star Inverter Split Ac (5 In 1 Convertible, Copper, Anti-Viral + Pm 2.5 Filter, 2023 Model, White With Gol...",
+        "price": "₹85,990",
+        "rating": "N/A"
+      }
+    ],
+    "health-beauty": [
+      {
+        "id": "product_1756871052818_pgeippe1x",
+        "name": "Samsung 1.5 Ton 5 Star Wind-Free Technology Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Anti-bacterial Fil...",
+        "price": "₹73,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_sv53oupf9",
+        "name": "Panasonic 1.5 Ton 4 Star Wi-Fi Inverter Smart Split AC (Copper Condenser, 7 in 1 Convertible with additional AI Mode, 4 Wa...",
+        "price": "₹59,400",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_wr7xt9ulx",
+        "name": "Blue Star 1.5 Ton 3 Star Fixed Speed Window AC (Copper, Turbo Cool, Humidity Control, Fan Modes-Auto/High/Medium/Low, Hydr...",
+        "price": "₹39,500",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_gbs31e79h",
+        "name": "Blue Star 1.5 Ton 5 Star Fixed Speed Window AC (Copper, Turbo Cool, Humidity Control, Fan Modes-Auto/High/Medium/Low, Hydr...",
+        "price": "₹44,500",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_0qeubdzyc",
+        "name": "Panasonic 1 Ton 3 Star Inverter Split Air Conditioner (Copper, PM 2.5 Air Purification, 2022 Model, CS/CU-RU12XKYA, White)",
+        "price": "₹47,100",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052818_pcwwlrdbp",
+        "name": "Amazon Basics 1 Ton, 5 Star, Wi-Fi Enabled Smart(Alexa/Google Assistant), Single Rotary Inverter Split AC (Copper Condense...",
+        "price": "₹49,089",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_6nr3dkbzo",
+        "name": "IFB 1 Ton 3 Star Twin Inverter Split Fastcool Silver Series AC (Copper, PM 0.3 Filter, IACI12SA3G3C, 2021 Model, Ivory Matte)",
+        "price": "₹42,190",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_qc01y1ya4",
+        "name": "Samsung 1.5 Ton 5 Star Wi-fi Enabled, Wind-Free Technology Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Ant...",
+        "price": "₹75,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_w2jdibglf",
+        "name": "LG 1.5 Ton 3 Star DUAL Inverter Window AC (Copper, Convertible 4-in-1 cooling, HD Filter, 2022 Model, PW-Q18WUXA, White)",
+        "price": "₹69,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_fph3lxgif",
+        "name": "Lloyd 2.0 Ton 3 Star Inverter Split Ac (5 In 1 Convertible, Copper, Anti-Viral + Pm 2.5 Filter, 2023 Model, White With Sil...",
+        "price": "₹77,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_zbzcs3nsy",
+        "name": "Lloyd 1.0 Ton 2 Star Fixed Speed Split AC (Copper, Anti-Viral + PM 2.5 Filter, 2023 Model, White, GLS12C2XWASD)",
+        "price": "₹46,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_0irwynqzm",
+        "name": "Voltas 2 Ton 5 Star, Inverter Split AC(Copper,4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 245V Vectra Plus, White)",
+        "price": "₹93,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_9jykblthz",
+        "name": "Lloyd 1.5 Ton 4 Star Fixed Speed Window Ac (Copper, 2023 Model, White With Golden Deco Strip, Glw18C4Ywgew)",
+        "price": "₹50,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_unha3w7ms",
+        "name": "Voltas 1.5 Ton 3 Star, Fixed Speed Window AC (Copper, Turbo Mode, 2023 Model, 183 Vectra Pearl, White)",
+        "price": "₹42,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_n89xnoetc",
+        "name": "LG 2.0 Ton 3 Star AI DUAL Inverter Split AC (Copper, Super Convertible 6-in-1 Cooling, 4 Way Swing, HD Filter with Anti-Vi...",
+        "price": "₹85,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_ckmgucelp",
+        "name": "Voltas 1 Ton 3 Star, Inverter Split AC(Copper, 4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 123V Vectra Elite, Wh...",
+        "price": "₹56,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_8cgrcrflx",
+        "name": "LG 1.5 Ton 3 Star Hot & Cold DUAL Inverter Split AC (Copper, Super Convertible 5-in-1 Cooling, 4 Way Swing & Anti Allergic...",
+        "price": "N/A",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_m4ryo56zi",
+        "name": "AmazonBasics 1 Ton 3 Star Split Ac (White, Copper, Anti Corrosion Coating)",
+        "price": "₹49,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_8dpabvuzx",
+        "name": "Voltas 1.5 Ton 3 Star, Inverter Window AC (Copper, 2-in-1 Adjustable Mode, 2023 Model, 183V Vertis Elite, White)",
+        "price": "₹49,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_cb2z1zed8",
+        "name": "Panasonic 1 Ton 4 Star Wi-Fi Inverter Smart Split AC (Copper Condenser, 7 in 1 Convertible with additional AI Mode, 4 Way ...",
+        "price": "₹50,600",
+        "rating": "N/A"
+      }
+    ],
+    "home-garden": [
+      {
+        "id": "product_1756871052819_bmn4zo9h7",
+        "name": "Blue Star 1.5 Ton 5 Star Convertible 5 in 1 Cooling Inverter Split AC (Copper, 4 Way Swing, Stabalizer Free Operation, Dus...",
+        "price": "₹73,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_zieyw3qep",
+        "name": "Samsung 2 Ton 3 Star Wi-fi Enabled Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Anti-bacterial Filter, 2023...",
+        "price": "₹83,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_daqe5yy5p",
+        "name": "LG 1 Ton 5 Star AI+ DUAL Inverter Wi-Fi Split AC (Copper, Super Convertible 6-in-1 Cooling, HD Filter with Anti-Virus Prot...",
+        "price": "₹78,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_dhwc8zprq",
+        "name": "Amazon Basics 1.5 Ton, 5 Star, Wi-Fi Enabled Smart(Alexa/Google Assistant), Twin Rotary Inverter Split AC (Copper Condense...",
+        "price": "₹56,179",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_7iry1ii0h",
+        "name": "Hitachi Split Ac - 1.5 Ton Shizen 3100S  Inverter - R32 - RSQG318HFEOF (Gold)",
+        "price": "₹59,700",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_rdukz4ggx",
+        "name": "Blue Star 0.8 Ton 3 Star Fixed Speed Window AC (Copper, Turbo Cool, Humidity Control, Fan Modes-Auto/High/Medium/Low, Hydr...",
+        "price": "₹30,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_auih64q2v",
+        "name": "Voltas 1 Ton 3 Star Window AC (123 Lyi/123 LZF White)",
+        "price": "₹29,490",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_n5z9a9fgo",
+        "name": "Cruise 1 Ton [Portable Antibacterial Coating, Dust Filter, Air Purifier, Dehumidifier Portable Ac (Copper, Cpcatf-Pq3S12, ...",
+        "price": "₹40,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_up6yxlnrf",
+        "name": "Panasonic 2 Ton 4 Star Wi-Fi Inverter Smart Split AC (Copper Condenser, 7 in 1 Convertible with additional AI Mode, 4 Way ...",
+        "price": "₹77,150",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_6rszmzrb2",
+        "name": "Panasonic 2 Ton 5 Star Wi-Fi Inverter Smart Split AC (Copper, 7 in 1 Convertible with additional AI Mode, Twin Cool, PM 0....",
+        "price": "₹87,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_3xfw4yiuj",
+        "name": "Blue Star 2 Ton 3 Star Convertible 4 in 1 Cooling Inverter Split AC (Copper, Smart Ready, Auto Defrost, Multi Sensors,Stab...",
+        "price": "₹71,750",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_d3qygm7e6",
+        "name": "Lloyd 1.5 Ton 2 Star Fixed Speed Split AC (Copper, Anti-Viral + PM 2.5 Filter, 2023 Model, White, GLS18C2XWASS)",
+        "price": "₹59,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_3y0fur4ql",
+        "name": "Carrier 1 Ton 3 Star Fixed Speed Split AC (Copper,Auto Cleanser, Economic Sleep Mode, High Density Filter for Dust Filtrat...",
+        "price": "₹54,590",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_lrfbbrpzn",
+        "name": "Voltas SAC 123 Vectra Platina Fixed Window AC 1 Ton",
+        "price": "₹35,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_wtelkx7px",
+        "name": "Hitachi SPLIT AC - 1.0 Ton HITACHI SHIZEN 3100S INVERTER - R32 - RAPG312HFEOZ1 (Gold)",
+        "price": "₹48,200",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_eci97k51m",
+        "name": "Samsung 1 Ton 3 Star Wind-Free Technology Inverter Split AC (Copper, Convertible 5-in-1 Cooling Mode, Easy Filter Plus (An...",
+        "price": "₹52,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_ub5b13kgw",
+        "name": "Daikin 1.5 Ton 5 Star Inverter Split AC (Copper, PM 1.0 Filter, 2022 Model, JTKJ50U, White)",
+        "price": "₹73,800",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052819_qhayvsqma",
+        "name": "Panasonic 1.5 Ton 3 Star Hot and Cold Wi-Fi Inverter Smart Split AC (Copper, 7 in 1 Convertible with additional AI Mode, T...",
+        "price": "₹61,400",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_5698inovt",
+        "name": "Whirlpool 1.5 Ton 4 Star, Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling Mode, HD Filter 2023 Model, S3I3...",
+        "price": "₹66,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_9ajxzx7xd",
+        "name": "Voltas 1.5 Ton 3 Star, Inverter Split AC(Copper, 5-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 183V Vertis Emeral...",
+        "price": "₹68,990",
+        "rating": "N/A"
+      }
+    ],
+    "sports-outdoors": [
+      {
+        "id": "product_1756871052820_k9qbv16rr",
+        "name": "Hitachi 1.5 Ton 5 Star Inverter Split AC (Copper, Dust Filter, 2022 Model, RSRG518HFEOZ1, White)",
+        "price": "N/A",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_7nhbgg4w8",
+        "name": "LG 1.5 Ton 3 Star DUAL Inverter Split AC (Copper, Super Convertible 5-in-1 Cooling, HD Filter with Anti-Virus Protection, ...",
+        "price": "₹55,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_mpworjyo2",
+        "name": "Blue Star 2 Ton 3 Star Fixed Speed Window AC (Copper, Turbo Cool, Humidity Control, Fan Modes-Auto/High/Medium/Low, Hydrop...",
+        "price": "₹58,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_pwtvzc8m4",
+        "name": "Whirlpool 2.0 Ton 3 Star, Flexicool Inverter Split AC (Copper, Convertible 4-in-1 Cooling Mode, HD Filter 2023 Model, S3I3...",
+        "price": "₹78,200",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_mirlnz3xs",
+        "name": "OGENERAL AMGB09BAWA-B WINDOW AC 0.75 TON 5 STAR (White)",
+        "price": "₹30,520",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_sh4b0dpu8",
+        "name": "Panasonic 1.5 Ton 5 Star Wi-Fi Inverter Smart Split AC (Copper, 7 in 1 Convertible with additional AI Mode, 4 Way Swing, n...",
+        "price": "₹72,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_aiszjabgn",
+        "name": "Small Personal Air Conditioners Mini Air Conditioner Portable AC Fan with 3 Wind Speed & Humidifier & 7 Colorful Nightligh...",
+        "price": "₹2,999",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_ux50dmi3o",
+        "name": "Godrej 1.5 Ton 3 Star Inverter Split AC (Copper, 2022 model, 5-in-1 convertible, Nano-Coated anti-viral filter AC 1.5T GIC...",
+        "price": "₹42,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_7c4t7xzgo",
+        "name": "Panasonic 1.5 Ton 5 Star Wi-Fi Inverter Smart Split AC (Copper, 7 in 1 Convertible with additional AI Mode, 4 Way Swing, n...",
+        "price": "₹76,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_zdx7jluiu",
+        "name": "Voltas 1.5 Ton 5 Star Inverter Window AC (Copper 185V DZA White)",
+        "price": "₹49,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_0ezzop6om",
+        "name": "Carrier 1.5 Ton 3 Star Window AC (Copper, Estrella Dx, White)",
+        "price": "₹43,090",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_yslu6jl0z",
+        "name": "Blue Star 1 Ton 5 Star Fixed Speed Window AC (Copper, Turbo Cool, Humidity Control, Fan Modes-Auto/High/Medium/Low, Hydrop...",
+        "price": "₹37,000",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_kk8nb76o0",
+        "name": "Amazon Basics 1 Ton 4 Star Fixed Speed Window AC (Copper, Turbo Cool, Dust Filter, 2022 Model, White)",
+        "price": "₹33,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_xucc7bkfj",
+        "name": "Voltas 2 Ton 5 Star Inverter Split AC (Copper Condenser, 245V EAZS, White)",
+        "price": "₹84,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_uhfdvwpbs",
+        "name": "Panasonic 1.5 Ton 4 Star Wi-Fi Twin-Cool Inverter Split Air Conditioner (Copper, Shield Blu Anti-Corrosion Technology, nan...",
+        "price": "N/A",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_1y8ham0mg",
+        "name": "Carrier 1.5 Ton 3 Star AI Flexicool Hybridjet Inverter Split AC (Copper, 4-in-1 Flexicool with Anti-Viral Guard, Smart Ene...",
+        "price": "₹70,290",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_br29wpji6",
+        "name": "Daikin 1.8 Ton 3 Star Inverter Split AC (Copper, Anti Bacterial Filter, 2022 Model, ATKL60UV16, White)",
+        "price": "₹72,900",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_8hrg0nlym",
+        "name": "Voltas 1 Ton 5 Star, Inverter Split AC(Copper, 4-in-1 Adjustable Mode, Anti-dust Filter, 2023 Model, 125V Vectra Elite, Wh...",
+        "price": "₹44,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_un7vqyd4s",
+        "name": "LG 2 Ton 4 Star DUAL Inverter Wi-Fi Window AC (Copper, Convertible 4-in-1 cooling, HD Filter with Anti Virus Protection, 2...",
+        "price": "₹75,990",
+        "rating": "N/A"
+      },
+      {
+        "id": "product_1756871052820_vnucqt7tq",
+        "name": "Haier 1.5 Ton 5 Star Frost Self Clean Inverter Split AC(Intelli Convertible 7-in-1, 2023 Model, HSU18K-PYS5BE-INV, White)",
+        "price": "₹71,490",
+        "rating": "N/A"
+      }
+    ]
+  }
+}

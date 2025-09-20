@@ -1,14 +1,22 @@
-import Constants from 'expo-constants';
+import {
+    API_BASE_URL,
+    FIREBASE_API_KEY,
+    FIREBASE_AUTH_DOMAIN,
+    FIREBASE_PROJECT_ID,
+    FIREBASE_STORAGE_BUCKET,
+    FIREBASE_MESSAGING_SENDER_ID,
+    FIREBASE_APP_ID,
+    STRIPE_PUBLISHABLE_KEY,
+    DEBUG_MODE,
+} from '@env';
 
-// API Configuration - FIXED: Correct Firebase project ID and fallback mode
+// API Configuration - FIXED: Using actual environment variables
 export const API = {
-    baseURL: Constants.expoConfig?.extra?.API_BASE_URL || 'https://us-central1-walmart-mobile-a6865.cloudfunctions.net',
+    baseURL: API_BASE_URL || 'https://us-central1-walmart-mobile-a6865.cloudfunctions.net',
     stripe: {
-        publishableKey: Constants.expoConfig?.extra?.STRIPE_PUBLISHABLE_KEY || 'pk_test_51Rn53AH8pNFfrvRPiHaJwfe8sjVzmw816AHxvQqHWFD3hJey1a9sqUZu6MvtQY8Y2AyR5DXf5ToFnqJz6ZAQbqd100pCWgURwb',
-        // ❌ REMOVED SECRET KEY - SECURITY RISK
+        publishableKey: STRIPE_PUBLISHABLE_KEY || 'pk_test_51Rn53AH8pNFfrvRPiHaJwfe8sjVzmw816AHxvQqHWFD3hJey1a9sqUZu6MvtQY8Y2AyR5DXf5ToFnqJz6ZAQbqd100pCWgURwb',
     },
-    // 🔧 FIXED: Default to false (use real APIs), only enable fallback when explicitly set
-    fallbackMode: Constants.expoConfig?.extra?.API_FALLBACK_MODE === 'true', // Default to false
+    fallbackMode: false, // Default to false
     endpoints: {
         // Firebase Functions endpoints
         calculateTax: '/calculateTax',
@@ -21,7 +29,7 @@ export const API = {
         stripeWebhook: '/stripeWebhook',
         healthCheck: '/healthCheck',
 
-        // Legacy endpoints (if you have other APIs)
+        // Legacy endpoints
         payments: '/payments',
         customers: '/payments/customers',
         paymentMethods: '/payments/payment-methods',
@@ -46,7 +54,7 @@ export const STRIPE_CONFIG = {
     appearance: {
         theme: 'stripe' as const,
         variables: {
-            colorPrimary: '#0071e3', // Walmart blue
+            colorPrimary: '#0071e3',
             colorBackground: '#ffffff',
             colorText: '#1c1c1e',
             colorDanger: '#df1b41',
@@ -62,7 +70,17 @@ export const APP_CONFIG = {
     name: 'Walmart Mobile App',
     version: '1.0.0',
     environment: __DEV__ ? 'development' : 'production',
-    debug: __DEV__,
+    debug: DEBUG_MODE === 'true' || __DEV__,
+} as const;
+
+// Firebase Configuration - FIXED: Using actual environment variables
+export const FIREBASE_CONFIG = {
+    apiKey: FIREBASE_API_KEY,
+    authDomain: FIREBASE_AUTH_DOMAIN,
+    projectId: FIREBASE_PROJECT_ID || 'walmart-mobile-a6865',
+    storageBucket: FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: FIREBASE_MESSAGING_SENDER_ID,
+    appId: FIREBASE_APP_ID,
 } as const;
 
 // Storage Keys for AsyncStorage
@@ -77,16 +95,6 @@ export const STORAGE_KEYS = {
     DEVICE_ID: '@walmart_device_id',
     NOTIFICATION_HISTORY: '@walmart_notification_history',
     SCHEDULED_NOTIFICATIONS: '@walmart_scheduled_notifications',
-} as const;
-
-// Firebase Configuration
-export const FIREBASE_CONFIG = {
-    apiKey: Constants.expoConfig?.extra?.FIREBASE_API_KEY,
-    authDomain: Constants.expoConfig?.extra?.FIREBASE_AUTH_DOMAIN,
-    projectId: Constants.expoConfig?.extra?.FIREBASE_PROJECT_ID || 'walmart-mobile-a6865',
-    storageBucket: Constants.expoConfig?.extra?.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: Constants.expoConfig?.extra?.FIREBASE_MESSAGING_SENDER_ID,
-    appId: Constants.expoConfig?.extra?.FIREBASE_APP_ID,
 } as const;
 
 // Payment Method Types
@@ -130,9 +138,9 @@ export const SHIPPING_TYPES = {
 
 // Tax Configuration
 export const TAX_CONFIG = {
-    defaultRate: 0.08, // 8% default tax rate
+    defaultRate: 0.08,
     exemptCategories: ['groceries', 'medicine'],
-    taxableStates: ['CA', 'NY', 'TX', 'FL'], // States where tax is calculated
+    taxableStates: ['CA', 'NY', 'TX', 'FL'],
 } as const;
 
 // Promo Code Types
@@ -169,10 +177,10 @@ export const FEATURE_FLAGS = {
 
 // Cache Configuration
 export const CACHE_CONFIG = {
-    productCacheTTL: 5 * 60 * 1000, // 5 minutes
-    cartCacheTTL: 30 * 60 * 1000, // 30 minutes
-    userCacheTTL: 60 * 60 * 1000, // 1 hour
-    paymentMethodsCacheTTL: 15 * 60 * 1000, // 15 minutes
+    productCacheTTL: 5 * 60 * 1000,
+    cartCacheTTL: 30 * 60 * 1000,
+    userCacheTTL: 60 * 60 * 1000,
+    paymentMethodsCacheTTL: 15 * 60 * 1000,
 } as const;
 
 // Error Messages
@@ -197,7 +205,7 @@ export const SUCCESS_MESSAGES = {
     PAYMENT_METHOD_REMOVED: 'Payment method removed successfully!',
 } as const;
 
-// Firebase Functions URL Helper - ENHANCED: Better error handling and validation
+// Firebase Functions URL Helper
 export const getFirebaseFunctionUrl = (functionName: string): string => {
     if (!functionName) {
         throw new Error('Function name is required');
@@ -208,22 +216,19 @@ export const getFirebaseFunctionUrl = (functionName: string): string => {
         throw new Error('API base URL is not configured');
     }
 
-    // Remove trailing slash from baseURL and leading slash from functionName
     const cleanBaseUrl = baseUrl.replace(/\/$/, '');
     const cleanFunctionName = functionName.replace(/^\//, '');
-
     const fullUrl = `${cleanBaseUrl}/${cleanFunctionName}`;
 
     if (__DEV__) {
-        console.log(`🔗 Firebase Function URL: ${fullUrl}`);
+        console.log(`Firebase Function URL: ${fullUrl}`);
     }
 
     return fullUrl;
 };
 
-// API Helper Functions - ENHANCED: Added validation and better error handling
+// API Helper Functions
 export const API_HELPERS = {
-    // Get full URL for Firebase Functions
     getTaxCalculationUrl: () => getFirebaseFunctionUrl('calculateTax'),
     getShippingCalculationUrl: () => getFirebaseFunctionUrl('calculateShipping'),
     getPromoValidationUrl: () => getFirebaseFunctionUrl('validatePromoCode'),
@@ -234,7 +239,6 @@ export const API_HELPERS = {
     getWebhookUrl: () => getFirebaseFunctionUrl('stripeWebhook'),
     getHealthCheckUrl: () => getFirebaseFunctionUrl('healthCheck'),
 
-    // 🆕 NEW: URL validation helper
     validateUrl: (url: string): boolean => {
         try {
             new URL(url);
@@ -244,24 +248,23 @@ export const API_HELPERS = {
         }
     },
 
-    // 🆕 NEW: Test connection helper
     testConnection: async (): Promise<boolean> => {
         try {
             const healthUrl = API_HELPERS.getHealthCheckUrl();
             const response = await fetch(healthUrl, {
                 method: 'GET',
                 headers: REQUEST_CONFIG.headers,
-                signal: AbortSignal.timeout(5000), // 5 second timeout
+                signal: AbortSignal.timeout(5000),
             });
             return response.ok;
         } catch (error) {
-            console.error('❌ Connection test failed:', error);
+            console.error('Connection test failed:', error);
             return false;
         }
     },
 } as const;
 
-// Environment Detection - ENHANCED: Better detection logic
+// Environment Detection
 export const ENV = {
     isDevelopment: __DEV__,
     isProduction: !__DEV__,
@@ -271,59 +274,46 @@ export const ENV = {
     isLiveMode: API.stripe.publishableKey.includes('pk_live_'),
 } as const;
 
-// Logging Configuration
-export const LOG_CONFIG = {
-    enableConsoleLogging: ENV.isDevelopment,
-    enableRemoteLogging: ENV.isProduction,
-    logLevel: ENV.isDevelopment ? 'debug' : 'error',
-} as const;
-
-// Request Configuration - ENHANCED: Better timeout and retry logic
+// Request Configuration
 export const REQUEST_CONFIG = {
-    timeout: 30000, // 30 seconds
+    timeout: 30000,
     retryAttempts: 3,
-    retryDelay: 1000, // 1 second
+    retryDelay: 1000,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': `${APP_CONFIG.name}/${APP_CONFIG.version}`,
     },
-    // 🆕 NEW: CORS configuration for Firebase Functions
     cors: {
         mode: 'cors' as RequestMode,
         credentials: 'omit' as RequestCredentials,
     },
 } as const;
 
-// 🆕 NEW: Configuration validation
+// Configuration validation
 export const validateConfiguration = (): { isValid: boolean; errors: string[] } => {
     const errors: string[] = [];
 
-    // Check API base URL
     if (!API.baseURL) {
         errors.push('API base URL is not configured');
     } else if (!API_HELPERS.validateUrl(API.baseURL)) {
         errors.push('API base URL is not a valid URL');
     }
 
-    // Check Stripe configuration
     if (!API.stripe.publishableKey) {
         errors.push('Stripe publishable key is not configured');
     } else if (!API.stripe.publishableKey.startsWith('pk_')) {
         errors.push('Stripe publishable key format is invalid');
     }
 
-    // Check Firebase project ID
     if (!FIREBASE_CONFIG.projectId) {
         errors.push('Firebase project ID is not configured');
     }
 
-    // Warn about fallback mode in production
     if (ENV.isProduction && API.fallbackMode) {
         errors.push('WARNING: Fallback mode is enabled in production');
     }
 
-    // Warn about test keys in production
     if (ENV.isProduction && ENV.isTestMode) {
         errors.push('WARNING: Using test Stripe keys in production');
     }
@@ -334,29 +324,27 @@ export const validateConfiguration = (): { isValid: boolean; errors: string[] } 
     };
 };
 
-// Development Helpers - ENHANCED: Better debugging information
+// Development logging
 if (__DEV__) {
-    console.log('🚀 Walmart Mobile App Configuration Loaded');
-    console.log('📡 API Base URL:', API.baseURL);
-    console.log('🔥 Firebase Project:', FIREBASE_CONFIG.projectId);
-    console.log('🌍 Environment:', ENV.isFirebaseProduction ? 'PRODUCTION' : 'EMULATOR');
-    console.log('💳 Stripe Mode:', ENV.isTestMode ? 'TEST' : 'LIVE');
-    console.log('🛡️ Fallback Mode:', API.fallbackMode ? 'ENABLED' : 'DISABLED');
+    console.log('Walmart Mobile App Configuration Loaded');
+    console.log('API Base URL:', API.baseURL);
+    console.log('Firebase Project:', FIREBASE_CONFIG.projectId);
+    console.log('Environment:', ENV.isFirebaseProduction ? 'PRODUCTION' : 'EMULATOR');
+    console.log('Stripe Mode:', ENV.isTestMode ? 'TEST' : 'LIVE');
+    console.log('Fallback Mode:', API.fallbackMode ? 'ENABLED' : 'DISABLED');
 
-    // Validate configuration
     const validation = validateConfiguration();
     if (!validation.isValid) {
-        console.warn('⚠️ Configuration Issues:');
+        console.warn('Configuration Issues:');
         validation.errors.forEach(error => console.warn(`  - ${error}`));
     } else {
-        console.log('✅ Configuration is valid');
+        console.log('Configuration is valid');
     }
 
-    // Test a sample URL
     try {
         const sampleUrl = API_HELPERS.getPaymentIntentUrl();
-        console.log('🔗 Sample Function URL:', sampleUrl);
+        console.log('Sample Function URL:', sampleUrl);
     } catch (error) {
-        console.error('❌ URL generation failed:', error);
+        console.error('URL generation failed:', error);
     }
 }

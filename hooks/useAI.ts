@@ -1,6 +1,6 @@
 // hooks/useAI.ts
 import { useState, useCallback } from 'react';
-import { claudeService } from '../services/api/claude';
+import firebaseClaudeService from '../services/api/firebaseClaudeService';
 import { smartSuggestionsService, SearchSuggestion } from '../services/api/smartSuggestions';
 
 interface AIState {
@@ -33,7 +33,7 @@ export const useAI = () => {
         setError(null);
 
         try {
-            const response = await claudeService.chat(messages, systemPrompt);
+            const response = await firebaseClaudeService.chat(messages, systemPrompt);
             return response;
         } catch (error) {
             console.error('AI chat error:', error);
@@ -60,7 +60,7 @@ export const useAI = () => {
         setError(null);
 
         try {
-            const result = await claudeService.enhanceSearch(query, products);
+            const result = await firebaseClaudeService.enhanceSearch(query, products);
             return result;
         } catch (error) {
             console.error('Search enhancement error:', error);
@@ -112,7 +112,7 @@ export const useAI = () => {
         setError(null);
 
         try {
-            const result = await claudeService.summarizeReviews(reviews);
+            const result = await firebaseClaudeService.summarizeReviews(reviews);
             return result;
         } catch (error) {
             console.error('Review summarization error:', error);
@@ -142,7 +142,7 @@ export const useAI = () => {
         setError(null);
 
         try {
-            const result = await claudeService.getPersonalizedRecommendations(userProfile, availableProducts);
+            const result = await firebaseClaudeService.getPersonalizedRecommendations(userProfile, availableProducts);
             return result;
         } catch (error) {
             console.error('Recommendations error:', error);
@@ -164,7 +164,7 @@ export const useAI = () => {
         setError(null);
 
         try {
-            const answer = await claudeService.answerProductQuestion(question, productData);
+            const answer = await firebaseClaudeService.answerProductQuestion(question, productData);
             return answer;
         } catch (error) {
             console.error('Product Q&A error:', error);
@@ -191,7 +191,7 @@ export const useAI = () => {
         setError(null);
 
         try {
-            const response = await claudeService.getShoppingAssistance(userMessage, context);
+            const response = await firebaseClaudeService.getShoppingAssistance(userMessage, context);
             return response;
         } catch (error) {
             console.error('Shopping assistance error:', error);
@@ -214,7 +214,7 @@ export const useAI = () => {
         getRecommendations,
         answerProductQuestion,
         getShoppingAssistance,
-        getSearchSuggestions, // <-- ADDED THIS
+        getSearchSuggestions,
 
         // Utilities
         setError,

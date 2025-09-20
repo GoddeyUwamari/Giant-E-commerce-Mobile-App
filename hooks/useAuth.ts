@@ -1,3 +1,4 @@
+// hooks/useAuth.ts
 import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +27,10 @@ import {
 
 // Import your Firebase config
 import { firebaseAuth, firebaseFirestore } from '../firebase/config';
+
+// Import social sign-in services
+import expoGoogleSignInService, { ExpoGoogleUserInfo } from '../services/api/expoGoogleSignIn';
+import { appleSignInService, AppleUserInfo } from '../services/api/appleSignIn';
 
 // Storage keys - Updated for SecureStore vs AsyncStorage
 const STORAGE_KEYS = {
@@ -60,6 +65,7 @@ export interface User {
     phoneVerified: boolean;
     preferredStore?: string;
     walmartPlusMember: boolean;
+    authProvider?: 'email' | 'google' | 'apple';
     createdAt: string;
     updatedAt: string;
 }
@@ -101,6 +107,14 @@ export interface AuthError {
     field?: string;
 }
 
+export interface SocialSignInResult {
+    success: boolean;
+    user?: User;
+    error?: string;
+    cancelled?: boolean;
+    notSupported?: boolean;
+}
+
 // Helper function to get auth error message
 const getAuthErrorMessage = (error: any): string => {
     switch (error.code) {
@@ -119,13 +133,37 @@ const getAuthErrorMessage = (error: any): string => {
             return 'Too many failed attempts. Please try again later.';
         case 'auth/network-request-failed':
             return 'Network error. Please check your connection and try again.';
+        case 'auth/account-exists-with-different-credential':
+            return 'An account already exists with this email using a different sign-in method.';
+        case 'auth/credential-already-in-use':
+            return 'This account is already linked to another user.';
         default:
             return error.message || 'An unexpected error occurred. Please try again.';
     }
 };
 
+// Helper function to handle OAuth-specific errors
+const handleOAuthError = (error: string): string => {
+    if (error.includes('code_challenge_method') ||
+        error.includes('invalid_request') ||
+        error.includes('Authorization Error')) {
+        return 'Authentication configuration error. Please try again or contact support.';
+    }
+    if (error.includes('redirect_uri_mismatch')) {
+        return 'Authentication configuration error. Please contact support.';
+    }
+    if (error.includes('invalid_client')) {
+        return 'Authentication service error. Please try again later.';
+    }
+    return error;
+};
+
 // Helper function to create user document
-const createUserDocument = async (firebaseUser: FirebaseUser, additionalData: Partial<User> = {}): Promise<User> => {
+const createUserDocument = async (
+    firebaseUser: FirebaseUser,
+    additionalData: Partial<User> = {},
+    authProvider: 'email' | 'google' | 'apple' = 'email'
+): Promise<User> => {
     const userData: User = {
         id: firebaseUser.uid,
         email: firebaseUser.email || '',
@@ -137,6 +175,7 @@ const createUserDocument = async (firebaseUser: FirebaseUser, additionalData: Pa
         phoneVerified: false,
         preferredStore: '',
         walmartPlusMember: false,
+        authProvider,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...additionalData,
@@ -150,7 +189,7 @@ const createUserDocument = async (firebaseUser: FirebaseUser, additionalData: Pa
         updatedAt: serverTimestamp(),
     };
 
-    await setDoc(userDocRef, userDataWithTimestamp);
+    await setDoc(userDocRef, userDataWithTimestamp, { merge: true });
 
     return userData;
 };
@@ -176,6 +215,7 @@ const getUserDocument = async (uid: string): Promise<User | null> => {
                 phoneVerified: data.phoneVerified || false,
                 preferredStore: data.preferredStore || '',
                 walmartPlusMember: data.walmartPlusMember || false,
+                authProvider: data.authProvider || 'email',
                 createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
                 updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
             };
@@ -228,6 +268,26 @@ export function useAuth() {
         accessToken: null,
         refreshToken: null,
     });
+
+    // Refresh access token
+    const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+        try {
+            const currentUser = firebaseAuth.currentUser;
+            if (currentUser) {
+                const token = await currentUser.getIdToken(true); // Force refresh
+                await secureStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+                setAuthState(prev => ({
+                    ...prev,
+                    accessToken: token,
+                }));
+                return token;
+            }
+            return null;
+        } catch (error) {
+            console.error('Token refresh failed:', error);
+            return null;
+        }
+    }, []);
 
     // Initialize auth state
     const initializeAuth = useCallback(async () => {
@@ -299,7 +359,7 @@ export function useAuth() {
             let userData = await getUserDocument(firebaseUser.uid);
 
             if (!userData) {
-                userData = await createUserDocument(firebaseUser);
+                userData = await createUserDocument(firebaseUser, {}, 'email');
             }
 
             // Store tokens in SecureStore and user data in AsyncStorage
@@ -325,6 +385,88 @@ export function useAuth() {
         }
     }, [router]);
 
+    // Apple Sign-In with improved error handling
+    const signInWithApple = useCallback(async (): Promise<SocialSignInResult> => {
+        try {
+            console.log('Starting Apple Sign-In from hook...');
+            setAuthState(prev => ({ ...prev, isLoading: true }));
+
+            // Check if Apple Sign-In is available
+            const isAppleAvailable = await appleSignInService.isAvailable();
+            if (!isAppleAvailable) {
+                setAuthState(prev => ({ ...prev, isLoading: false }));
+                return {
+                    success: false,
+                    error: 'Apple Sign-In is not available on this device',
+                    notSupported: true,
+                };
+            }
+
+            const result = await appleSignInService.signInWithFirebase();
+
+            if (!result.success) {
+                setAuthState(prev => ({ ...prev, isLoading: false }));
+                return {
+                    success: false,
+                    error: result.error,
+                    cancelled: result.cancelled,
+                    notSupported: result.notSupported,
+                };
+            }
+
+            const { userInfo, firebaseUser } = result;
+
+            if (!userInfo || !firebaseUser) {
+                setAuthState(prev => ({ ...prev, isLoading: false }));
+                return {
+                    success: false,
+                    error: 'Failed to get user information from Apple',
+                };
+            }
+
+            const accessToken = await firebaseUser.getIdToken();
+
+            // Get or create user data
+            let userData = await getUserDocument(firebaseUser.uid);
+
+            if (!userData) {
+                userData = await createUserDocument(firebaseUser, {
+                    firstName: userInfo.firstName,
+                    lastName: userInfo.lastName,
+                }, 'apple');
+            }
+
+            // Store tokens and user data
+            await Promise.all([
+                secureStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, accessToken),
+                AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData)),
+            ]);
+
+            setAuthState(prev => ({
+                ...prev,
+                user: userData,
+                isAuthenticated: true,
+                accessToken,
+                refreshToken: null,
+                isLoading: false,
+            }));
+
+            // Navigate to main app
+            router.replace(ROUTES.TABS.ROOT);
+
+            return {
+                success: true,
+                user: userData,
+            };
+        } catch (error) {
+            console.error('Apple Sign-In hook error:', error);
+            setAuthState(prev => ({ ...prev, isLoading: false }));
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Apple sign-in failed',
+            };
+        }
+    }, [router]);
     // Register
     const register = useCallback(async (data: RegisterData): Promise<void> => {
         try {
@@ -352,7 +494,7 @@ export function useAuth() {
                 firstName: data.firstName,
                 lastName: data.lastName,
                 phone: data.phone,
-            });
+            }, 'email');
 
             const accessToken = await firebaseUser.getIdToken();
 
@@ -391,6 +533,14 @@ export function useAuth() {
         const performLogout = async () => {
             try {
                 setAuthState(prev => ({ ...prev, isLoading: true }));
+
+                // Sign out from social providers if needed
+                const currentUser = authState.user;
+                if (currentUser?.authProvider === 'google') {
+                    await expoGoogleSignInService.signOut();
+                } else if (currentUser?.authProvider === 'apple') {
+                    await appleSignInService.signOut();
+                }
 
                 // Use Firebase JS SDK
                 await signOut(firebaseAuth);
@@ -433,7 +583,7 @@ export function useAuth() {
         } else {
             await performLogout();
         }
-    }, [clearAuthData, router]);
+    }, [authState.user, clearAuthData, router]);
 
     // Forgot password
     const forgotPassword = useCallback(async (email: string): Promise<void> => {
@@ -444,6 +594,98 @@ export function useAuth() {
             throw new Error(getAuthErrorMessage(error));
         }
     }, []);
+
+    // Google Sign-In with improved error handling
+    const signInWithGoogle = useCallback(async (): Promise<SocialSignInResult> => {
+        try {
+            console.log('Starting Google Sign-In from hook...');
+            setAuthState(prev => ({ ...prev, isLoading: true }));
+
+            // Check if Google Sign-In is available by trying to initialize
+            try {
+                await expoGoogleSignInService.initialize();
+            } catch (initError) {
+                console.error('Google Sign-In initialization failed:', initError);
+                setAuthState(prev => ({ ...prev, isLoading: false }));
+                return {
+                    success: false,
+                    error: 'Google Sign-In is not properly configured',
+                    notSupported: true,
+                };
+            }
+
+            const result = await expoGoogleSignInService.signInWithFirebase();
+
+            if (!result.success) {
+                setAuthState(prev => ({ ...prev, isLoading: false }));
+
+                // Handle OAuth-specific errors
+                const errorMessage = result.error ? handleOAuthError(result.error) : 'Google sign-in failed';
+
+                return {
+                    success: false,
+                    error: errorMessage,
+                    cancelled: result.cancelled,
+                };
+            }
+
+            const { userInfo, firebaseUser } = result;
+
+            if (!userInfo || !firebaseUser) {
+                setAuthState(prev => ({ ...prev, isLoading: false }));
+                return {
+                    success: false,
+                    error: 'Failed to get user information from Google',
+                };
+            }
+
+            const accessToken = await firebaseUser.getIdToken();
+
+            // Get or create user data
+            let userData = await getUserDocument(firebaseUser.uid);
+
+            if (!userData) {
+                userData = await createUserDocument(firebaseUser, {
+                    firstName: userInfo.firstName,
+                    lastName: userInfo.lastName,
+                    avatar: userInfo.avatar,
+                }, 'google');
+            }
+
+            // Store tokens and user data
+            await Promise.all([
+                secureStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, accessToken),
+                AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData)),
+            ]);
+
+            setAuthState(prev => ({
+                ...prev,
+                user: userData,
+                isAuthenticated: true,
+                accessToken,
+                refreshToken: null,
+                isLoading: false,
+            }));
+
+            // Navigate to main app
+            router.replace(ROUTES.TABS.ROOT);
+
+            return {
+                success: true,
+                user: userData,
+            };
+        } catch (error) {
+            console.error('Google Sign-In hook error:', error);
+            setAuthState(prev => ({ ...prev, isLoading: false }));
+
+            const errorMessage = error instanceof Error ? handleOAuthError(error.message) : 'Google sign-in failed';
+
+            return {
+                success: false,
+                error: errorMessage,
+            };
+        }
+    }, [router]);
 
     // Verify email
     const verifyEmail = useCallback(async (): Promise<void> => {
@@ -552,14 +794,41 @@ export function useAuth() {
         }
     }, []);
 
-    // Add Firebase auth state listener
+    // Improved availability checks
+    const isGoogleSignInAvailable = useCallback(async (): Promise<boolean> => {
+        try {
+            await expoGoogleSignInService.initialize();
+            return true;
+        } catch (error) {
+            console.warn('Google Sign-In not available:', error);
+            return false;
+        }
+    }, []);
+
+    const isAppleSignInAvailable = useCallback(async (): Promise<boolean> => {
+        try {
+            return await appleSignInService.isAvailable();
+        } catch (error) {
+            console.warn('Apple Sign-In not available:', error);
+            return false;
+        }
+    }, []);
+
+    // Add Firebase auth state listener with race condition prevention
     useEffect(() => {
+        let isSubscribed = true;
+
         const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+            // Prevent race condition with initialization
+            if (!authState.isInitialized || !isSubscribed) {
+                return;
+            }
+
             if (firebaseUser) {
                 // User is signed in
                 try {
                     const userData = await getUserDocument(firebaseUser.uid);
-                    if (userData) {
+                    if (userData && isSubscribed) {
                         const accessToken = await firebaseUser.getIdToken();
 
                         setAuthState(prev => ({
@@ -581,19 +850,24 @@ export function useAuth() {
                 }
             } else {
                 // User is signed out
-                setAuthState(prev => ({
-                    ...prev,
-                    user: null,
-                    isAuthenticated: false,
-                    accessToken: null,
-                    refreshToken: null,
-                    isLoading: false,
-                }));
+                if (isSubscribed) {
+                    setAuthState(prev => ({
+                        ...prev,
+                        user: null,
+                        isAuthenticated: false,
+                        accessToken: null,
+                        refreshToken: null,
+                        isLoading: false,
+                    }));
+                }
             }
         });
 
-        return unsubscribe;
-    }, []);
+        return () => {
+            isSubscribed = false;
+            unsubscribe();
+        };
+    }, [authState.isInitialized]);
 
     // Initialize auth on mount
     useEffect(() => {
@@ -612,10 +886,19 @@ export function useAuth() {
         verifyEmail,
         updateProfile,
 
+        // Social Sign-In
+        signInWithGoogle,
+        signInWithApple, // Add this line
+        isGoogleSignInAvailable,
+        isAppleSignInAvailable,
+
         // Biometric
         authenticateWithBiometrics,
         isBiometricEnabled,
         setBiometricEnabled,
+
+        // Token management
+        refreshAccessToken,
 
         // Utilities
         initializeAuth,

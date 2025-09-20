@@ -19,14 +19,67 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import unified system - INTEGRATED
 import { useCartStore } from '../../store/slices/cartSlice';
-import {
-    ALL_PRODUCTS,
-    getProductById,
-    getProductsByCategory,
-    CATEGORIES,
-    Product
-} from '../../constants/products';
-import { getProductImageBySize } from '../../assets/images/imageLoader';
+import { ALL_PRODUCTS, ALL_CATEGORIES } from '../../constants/products/data';
+
+// Add these helper functions to replace the old imports
+const getProductById = (id: string) => {
+    return ALL_PRODUCTS.find(product => product.id === id);
+};
+
+const getProductsByCategory = (categorySlug: string) => {
+    return ALL_PRODUCTS.filter(product => product.category === categorySlug);
+};
+
+const getProductImageBySize = (id: string | number, size?: string) => {
+    const product = ALL_PRODUCTS.find(p => p.id === id.toString());
+    if (product && product.image) {
+        return { uri: product.image };
+    }
+    return { uri: 'https://via.placeholder.com/300x300/f0f0f0/666?text=No+Image' };
+};
+
+// Create CATEGORIES from ALL_CATEGORIES
+const CATEGORIES = ALL_CATEGORIES.reduce((acc, category) => {
+    acc[category.slug] = {
+        name: category.name,
+        icon: category.icon,
+        color: category.color,
+    };
+    return acc;
+}, {} as Record<string, { name: string; icon: string; color: string }>);
+
+// Product interface for your new structure
+interface Product {
+    id: string;
+    name: string;
+    brand: string;
+    price: number;
+    originalPrice?: number;
+    rating: number;
+    reviewCount: number;
+    category: string;
+    inStock: boolean;
+    description?: string;
+    badge?: string;
+    badgeColor?: string;
+    featured?: boolean;
+    shipping?: {
+        free: boolean;
+        option: string;
+    };
+    sku: string;
+    maxQuantity?: number;
+    minQuantity?: number;
+    status?: string;
+    storeId?: string;
+    storeName?: string;
+    delivery?: {
+        option: 'pickup' | 'delivery' | 'shipping';
+        freeShippingEligible: boolean;
+    };
+    image: string; // Direct URL from CSV data
+    primaryImage?: string; // For backward compatibility
+}
 
 // Enhanced colors - Walmart design system
 const COLORS = {
@@ -196,7 +249,6 @@ export default function RecentlyViewedScreen() {
         router.push(`/product/${productId}`);
     };
 
-    // Enhanced add to cart with real integration
     const handleAddToCart = useCallback(async (product: Product) => {
         setIsAddingToCart(prev => ({ ...prev, [product.id]: true }));
 
@@ -210,7 +262,7 @@ export default function RecentlyViewedScreen() {
                 quantity: 1,
                 maxQuantity: product.maxQuantity || 10,
                 minQuantity: product.minQuantity || 1,
-                image: product.primaryImage,
+                image: product.image, // Use direct image URL
                 category: product.category,
                 sku: product.sku,
                 status: product.status || 'available',
